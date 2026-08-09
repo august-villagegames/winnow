@@ -1,0 +1,95 @@
+{
+  "protocol": "winnow.portable-session",
+  "schemaVersion": 1,
+  "runtimeVersion": "1.0.0",
+  "sessionId": "synthetic-session-000000000000000000000000000",
+  "createdAt": "2026-08-08T12:00:00Z",
+  "query": "Find a calm, durable weekend field camera for a small travel kit",
+  "research": {
+    "asOf": "2026-08-08T11:30:00Z",
+    "assumptions": [
+      "Prices are approximate list prices in USD.",
+      "The user values a compact kit over maximum resolution."
+    ],
+    "summary": "A synthetic research pack representing a broad comparison of compact field cameras. Every candidate has source-backed facts across the declared factors.",
+    "sources": [
+      {"id":"source-01","title":"Synthetic camera 01 reference","url":"https://example.com/cameras/01","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-02","title":"Synthetic camera 02 reference","url":"https://example.com/cameras/02","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-03","title":"Synthetic camera 03 reference","url":"https://example.com/cameras/03","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-04","title":"Synthetic camera 04 reference","url":"https://example.com/cameras/04","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-05","title":"Synthetic camera 05 reference","url":"https://example.com/cameras/05","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-06","title":"Synthetic camera 06 reference","url":"https://example.com/cameras/06","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-07","title":"Synthetic camera 07 reference","url":"https://example.com/cameras/07","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-08","title":"Synthetic camera 08 reference","url":"https://example.com/cameras/08","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-09","title":"Synthetic camera 09 reference","url":"https://example.com/cameras/09","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-10","title":"Synthetic camera 10 reference","url":"https://example.com/cameras/10","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-11","title":"Synthetic camera 11 reference","url":"https://example.com/cameras/11","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-12","title":"Synthetic camera 12 reference","url":"https://example.com/cameras/12","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-13","title":"Synthetic camera 13 reference","url":"https://example.com/cameras/13","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-14","title":"Synthetic camera 14 reference","url":"https://example.com/cameras/14","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-15","title":"Synthetic camera 15 reference","url":"https://example.com/cameras/15","retrievedAt":"2026-08-08T11:00:00Z"},
+      {"id":"source-16","title":"Synthetic camera 16 reference","url":"https://example.com/cameras/16","retrievedAt":"2026-08-08T11:00:00Z"}
+    ],
+    "factors": [
+      {"id":"price","label":"Price","description":"Approximate list price in USD.","valueType":"number"},
+      {"id":"weight","label":"Carry weight","description":"Approximate body weight in grams.","valueType":"number"},
+      {"id":"battery","label":"Battery life","description":"Approximate rated shots per charge.","valueType":"number"},
+      {"id":"weather","label":"Weather sealing","description":"Whether the body is described as weather sealed.","valueType":"boolean"},
+      {"id":"viewfinder","label":"Viewfinder style","description":"The primary viewfinder style.","valueType":"category"},
+      {"id":"handling","label":"Handling feel","description":"The broad control and handling character.","valueType":"category"},
+      {"id":"kit","label":"Kit footprint","description":"The compactness of the complete travel kit.","valueType":"number"},
+      {"id":"durability","label":"Durability","description":"A synthetic durability score for testing selector behavior.","valueType":"number"}
+    ],
+    "candidates": [
+      {"id":"camera-01","name":"Synthetic camera 01","summary":"Quiet controls and a compact weather-ready body.","sourceIds":["source-01"],"facts":{"price":680,"weight":420,"battery":420,"weather":true,"viewfinder":"corner","handling":"calm","kit":2,"durability":8}},
+      {"id":"camera-02","name":"Synthetic camera 02","summary":"A light travel body with a bright electronic viewfinder.","sourceIds":["source-02"],"facts":{"price":740,"weight":390,"battery":380,"weather":true,"viewfinder":"center","handling":"calm","kit":2,"durability":8}},
+      {"id":"camera-03","name":"Synthetic camera 03","summary":"A sturdy compact with tactile direct controls.","sourceIds":["source-03"],"facts":{"price":810,"weight":510,"battery":460,"weather":true,"viewfinder":"corner","handling":"tactile","kit":3,"durability":9}},
+      {"id":"camera-04","name":"Synthetic camera 04","summary":"An inexpensive small body designed for easy carrying.","sourceIds":["source-04"],"facts":{"price":460,"weight":350,"battery":340,"weather":false,"viewfinder":"none","handling":"simple","kit":1,"durability":6}},
+      {"id":"camera-05","name":"Synthetic camera 05","summary":"A high-resolution option with a balanced travel kit.","sourceIds":["source-05"],"facts":{"price":990,"weight":550,"battery":500,"weather":true,"viewfinder":"center","handling":"tactile","kit":3,"durability":9}},
+      {"id":"camera-06","name":"Synthetic camera 06","summary":"A restrained body with reliable battery endurance.","sourceIds":["source-06"],"facts":{"price":620,"weight":470,"battery":610,"weather":true,"viewfinder":"corner","handling":"calm","kit":2,"durability":8}},
+      {"id":"camera-07","name":"Synthetic camera 07","summary":"A playful small camera for fast, informal trips.","sourceIds":["source-07"],"facts":{"price":520,"weight":330,"battery":300,"weather":false,"viewfinder":"none","handling":"simple","kit":1,"durability":5}},
+      {"id":"camera-08","name":"Synthetic camera 08","summary":"A robust body with a larger, more capable kit.","sourceIds":["source-08"],"facts":{"price":1130,"weight":640,"battery":570,"weather":true,"viewfinder":"center","handling":"tactile","kit":4,"durability":10}},
+      {"id":"camera-09","name":"Synthetic camera 09","summary":"A compact weather-ready option with a quiet profile.","sourceIds":["source-09"],"facts":{"price":760,"weight":430,"battery":440,"weather":true,"viewfinder":"corner","handling":"calm","kit":2,"durability":8}},
+      {"id":"camera-10","name":"Synthetic camera 10","summary":"A straightforward lightweight option for daylight travel.","sourceIds":["source-10"],"facts":{"price":400,"weight":310,"battery":280,"weather":false,"viewfinder":"none","handling":"simple","kit":1,"durability":5}},
+      {"id":"camera-11","name":"Synthetic camera 11","summary":"A durable long-battery body for remote weekends.","sourceIds":["source-11"],"facts":{"price":870,"weight":570,"battery":680,"weather":true,"viewfinder":"center","handling":"tactile","kit":3,"durability":10}},
+      {"id":"camera-12","name":"Synthetic camera 12","summary":"A quiet, moderate-weight camera with a small footprint.","sourceIds":["source-12"],"facts":{"price":700,"weight":410,"battery":410,"weather":false,"viewfinder":"corner","handling":"calm","kit":2,"durability":7}},
+      {"id":"camera-13","name":"Synthetic camera 13","summary":"A bold high-output body for demanding assignments.","sourceIds":["source-13"],"facts":{"price":1280,"weight":690,"battery":720,"weather":true,"viewfinder":"center","handling":"tactile","kit":4,"durability":10}},
+      {"id":"camera-14","name":"Synthetic camera 14","summary":"A small, affordable body with simple controls.","sourceIds":["source-14"],"facts":{"price":480,"weight":360,"battery":350,"weather":false,"viewfinder":"none","handling":"simple","kit":1,"durability":6}},
+      {"id":"camera-15","name":"Synthetic camera 15","summary":"A balanced camera that favors quiet street handling.","sourceIds":["source-15"],"facts":{"price":830,"weight":450,"battery":480,"weather":true,"viewfinder":"corner","handling":"calm","kit":2,"durability":8}},
+      {"id":"camera-16","name":"Synthetic camera 16","summary":"A resilient compact with confident controls.","sourceIds":["source-16"],"facts":{"price":930,"weight":530,"battery":540,"weather":true,"viewfinder":"center","handling":"tactile","kit":3,"durability":9}}
+    ]
+  },
+  "presentations": [
+    {"candidateId":"camera-01","sourceIds":["source-01"],"blocks":[{"type":"title","text":"Synthetic camera 01"},{"type":"text","sourceId":"source-01","text":"Quiet controls and a compact weather-ready body."},{"type":"metric-grid","items":[{"label":"Price","value":"$680","sourceId":"source-01"},{"label":"Weight","value":"420 g","sourceId":"source-01"},{"label":"Battery","value":"420 shots","sourceId":"source-01"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/01","sourceId":"source-01"}]},
+    {"candidateId":"camera-02","sourceIds":["source-02"],"blocks":[{"type":"title","text":"Synthetic camera 02"},{"type":"text","sourceId":"source-02","text":"A light travel body with a bright electronic viewfinder."},{"type":"metric-grid","items":[{"label":"Price","value":"$740","sourceId":"source-02"},{"label":"Weight","value":"390 g","sourceId":"source-02"},{"label":"Battery","value":"380 shots","sourceId":"source-02"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/02","sourceId":"source-02"}]},
+    {"candidateId":"camera-03","sourceIds":["source-03"],"blocks":[{"type":"title","text":"Synthetic camera 03"},{"type":"text","sourceId":"source-03","text":"A sturdy compact with tactile direct controls."},{"type":"metric-grid","items":[{"label":"Price","value":"$810","sourceId":"source-03"},{"label":"Weight","value":"510 g","sourceId":"source-03"},{"label":"Battery","value":"460 shots","sourceId":"source-03"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/03","sourceId":"source-03"}]},
+    {"candidateId":"camera-04","sourceIds":["source-04"],"blocks":[{"type":"title","text":"Synthetic camera 04"},{"type":"text","sourceId":"source-04","text":"An inexpensive small body designed for easy carrying."},{"type":"metric-grid","items":[{"label":"Price","value":"$460","sourceId":"source-04"},{"label":"Weight","value":"350 g","sourceId":"source-04"},{"label":"Battery","value":"340 shots","sourceId":"source-04"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/04","sourceId":"source-04"}]},
+    {"candidateId":"camera-05","sourceIds":["source-05"],"blocks":[{"type":"title","text":"Synthetic camera 05"},{"type":"text","sourceId":"source-05","text":"A high-resolution option with a balanced travel kit."},{"type":"metric-grid","items":[{"label":"Price","value":"$990","sourceId":"source-05"},{"label":"Weight","value":"550 g","sourceId":"source-05"},{"label":"Battery","value":"500 shots","sourceId":"source-05"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/05","sourceId":"source-05"}]},
+    {"candidateId":"camera-06","sourceIds":["source-06"],"blocks":[{"type":"title","text":"Synthetic camera 06"},{"type":"text","sourceId":"source-06","text":"A restrained body with reliable battery endurance."},{"type":"metric-grid","items":[{"label":"Price","value":"$620","sourceId":"source-06"},{"label":"Weight","value":"470 g","sourceId":"source-06"},{"label":"Battery","value":"610 shots","sourceId":"source-06"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/06","sourceId":"source-06"}]},
+    {"candidateId":"camera-07","sourceIds":["source-07"],"blocks":[{"type":"title","text":"Synthetic camera 07"},{"type":"text","sourceId":"source-07","text":"A playful small camera for fast, informal trips."},{"type":"metric-grid","items":[{"label":"Price","value":"$520","sourceId":"source-07"},{"label":"Weight","value":"330 g","sourceId":"source-07"},{"label":"Battery","value":"300 shots","sourceId":"source-07"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/07","sourceId":"source-07"}]},
+    {"candidateId":"camera-08","sourceIds":["source-08"],"blocks":[{"type":"title","text":"Synthetic camera 08"},{"type":"text","sourceId":"source-08","text":"A robust body with a larger, more capable kit."},{"type":"metric-grid","items":[{"label":"Price","value":"$1130","sourceId":"source-08"},{"label":"Weight","value":"640 g","sourceId":"source-08"},{"label":"Battery","value":"570 shots","sourceId":"source-08"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/08","sourceId":"source-08"}]},
+    {"candidateId":"camera-09","sourceIds":["source-09"],"blocks":[{"type":"title","text":"Synthetic camera 09"},{"type":"text","sourceId":"source-09","text":"A compact weather-ready option with a quiet profile."},{"type":"metric-grid","items":[{"label":"Price","value":"$760","sourceId":"source-09"},{"label":"Weight","value":"430 g","sourceId":"source-09"},{"label":"Battery","value":"440 shots","sourceId":"source-09"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/09","sourceId":"source-09"}]},
+    {"candidateId":"camera-10","sourceIds":["source-10"],"blocks":[{"type":"title","text":"Synthetic camera 10"},{"type":"text","sourceId":"source-10","text":"A straightforward lightweight option for daylight travel."},{"type":"metric-grid","items":[{"label":"Price","value":"$400","sourceId":"source-10"},{"label":"Weight","value":"310 g","sourceId":"source-10"},{"label":"Battery","value":"280 shots","sourceId":"source-10"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/10","sourceId":"source-10"}]},
+    {"candidateId":"camera-11","sourceIds":["source-11"],"blocks":[{"type":"title","text":"Synthetic camera 11"},{"type":"text","sourceId":"source-11","text":"A durable long-battery body for remote weekends."},{"type":"metric-grid","items":[{"label":"Price","value":"$870","sourceId":"source-11"},{"label":"Weight","value":"570 g","sourceId":"source-11"},{"label":"Battery","value":"680 shots","sourceId":"source-11"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/11","sourceId":"source-11"}]},
+    {"candidateId":"camera-12","sourceIds":["source-12"],"blocks":[{"type":"title","text":"Synthetic camera 12"},{"type":"text","sourceId":"source-12","text":"A quiet, moderate-weight camera with a small footprint."},{"type":"metric-grid","items":[{"label":"Price","value":"$700","sourceId":"source-12"},{"label":"Weight","value":"410 g","sourceId":"source-12"},{"label":"Battery","value":"410 shots","sourceId":"source-12"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/12","sourceId":"source-12"}]},
+    {"candidateId":"camera-13","sourceIds":["source-13"],"blocks":[{"type":"title","text":"Synthetic camera 13"},{"type":"text","sourceId":"source-13","text":"A bold high-output body for demanding assignments."},{"type":"metric-grid","items":[{"label":"Price","value":"$1280","sourceId":"source-13"},{"label":"Weight","value":"690 g","sourceId":"source-13"},{"label":"Battery","value":"720 shots","sourceId":"source-13"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/13","sourceId":"source-13"}]},
+    {"candidateId":"camera-14","sourceIds":["source-14"],"blocks":[{"type":"title","text":"Synthetic camera 14"},{"type":"text","sourceId":"source-14","text":"A small, affordable body with simple controls."},{"type":"metric-grid","items":[{"label":"Price","value":"$480","sourceId":"source-14"},{"label":"Weight","value":"360 g","sourceId":"source-14"},{"label":"Battery","value":"350 shots","sourceId":"source-14"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/14","sourceId":"source-14"}]},
+    {"candidateId":"camera-15","sourceIds":["source-15"],"blocks":[{"type":"title","text":"Synthetic camera 15"},{"type":"text","sourceId":"source-15","text":"A balanced camera that favors quiet street handling."},{"type":"metric-grid","items":[{"label":"Price","value":"$830","sourceId":"source-15"},{"label":"Weight","value":"450 g","sourceId":"source-15"},{"label":"Battery","value":"480 shots","sourceId":"source-15"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/15","sourceId":"source-15"}]},
+    {"candidateId":"camera-16","sourceIds":["source-16"],"blocks":[{"type":"title","text":"Synthetic camera 16"},{"type":"text","sourceId":"source-16","text":"A resilient compact with confident controls."},{"type":"metric-grid","items":[{"label":"Price","value":"$930","sourceId":"source-16"},{"label":"Weight","value":"530 g","sourceId":"source-16"},{"label":"Battery","value":"540 shots","sourceId":"source-16"}]},{"type":"link","label":"Open reference","url":"https://example.com/cameras/16","sourceId":"source-16"}]}
+  ],
+  "initialRound": {
+    "candidateIds": ["camera-01", "camera-02", "camera-03", "camera-04"],
+    "factorIds": ["price", "weight", "battery", "weather", "viewfinder", "handling"],
+    "generationExplanation": "Four representative candidates cover compactness, durability, control style, and price while keeping the first round easy to scan."
+  },
+  "localStrategy": {
+    "roundSize": 4,
+    "factorLimit": 6,
+    "factorWeightStep": 1.5,
+    "factorWeightMin": 0.25,
+    "factorWeightMax": 4,
+    "relevanceWeight": 0.75,
+    "diversityWeight": 0.15,
+    "evidenceWeight": 0.1
+  }
+}

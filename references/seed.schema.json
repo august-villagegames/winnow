@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/portable-winnow/winnow-skill/references/seed.schema.json",
+  "title": "Portable Winnow session seed",
+  "type": "object",
+  "required": ["protocol", "schemaVersion", "runtimeVersion", "sessionId", "createdAt", "query", "research", "presentations", "initialRound", "localStrategy"],
+  "properties": {
+    "protocol": {"const": "winnow.portable-session"},
+    "schemaVersion": {"const": 1},
+    "runtimeVersion": {"const": "1.0.0"},
+    "sessionId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "query": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "research": {"$ref": "#/$defs/research"},
+    "presentations": {"type": "array", "minItems": 12, "maxItems": 24},
+    "initialRound": {
+      "type": "object",
+      "required": ["candidateIds", "factorIds", "generationExplanation"],
+      "properties": {
+        "candidateIds": {"type": "array", "minItems": 4, "maxItems": 4, "uniqueItems": true},
+        "factorIds": {"type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true},
+        "generationExplanation": {"type": "string", "minLength": 1}
+      }
+    },
+    "localStrategy": {
+      "type": "object",
+      "const": {
+        "roundSize": 4,
+        "factorLimit": 6,
+        "factorWeightStep": 1.5,
+        "factorWeightMin": 0.25,
+        "factorWeightMax": 4,
+        "relevanceWeight": 0.75,
+        "diversityWeight": 0.15,
+        "evidenceWeight": 0.1
+      }
+    }
+  },
+  "$defs": {
+    "research": {
+      "type": "object",
+      "required": ["asOf", "assumptions", "summary", "sources", "factors", "candidates"],
+      "properties": {
+        "asOf": {"type": "string", "format": "date-time"},
+        "assumptions": {"type": "array", "maxItems": 12, "items": {"type": "string"}},
+        "summary": {"type": "string", "minLength": 1},
+        "sources": {"type": "array", "minItems": 1, "maxItems": 80},
+        "factors": {"type": "array", "minItems": 6, "maxItems": 10, "uniqueItems": true},
+        "candidates": {"type": "array", "minItems": 12, "maxItems": 24, "uniqueItems": true}
+      }
+    }
+  }
+}
