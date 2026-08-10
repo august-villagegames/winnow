@@ -35,7 +35,7 @@ Final result: passed
 
 ## Automated gates
 
-- `python3 -m unittest discover -s portable-poc/tests -v` — passed (15 tests).
-- `node --test portable-poc/tests/runtime-core.test.mjs` — passed (4 tests).
-- `python3 portable-poc/scripts/winnow.py validate fixtures/synthetic-seed.json` — passed.
-- `python3 portable-poc/scripts/winnow.py validate-successor fixtures/synthetic-continuation.json fixtures/synthetic-successor-seed.json` — passed.
+- `python3 -m unittest discover -s tests -v` — passed (15 tests).
+- `node --test tests/runtime-core.test.mjs` — passed (4 tests).
+- `python3 scripts/winnow.py validate fixtures/synthetic-seed.json` — passed.
+- `python3 scripts/winnow.py validate-successor fixtures/synthetic-continuation.json fixtures/synthetic-successor-seed.json` — passed.

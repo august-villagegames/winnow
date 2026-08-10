@@ -1,0 +1,12 @@
+Winnow portable runtime
+
+Copyright 2026 Winnow contributors.
+
+Third-party files bundled with this runtime:
+
+- `assets/fonts/SpaceGrotesk-latin.woff2` is Space Grotesk by The Space
+  Grotesk Project Authors and is licensed under the SIL Open Font License,
+  Version 1.1. The license text is in `assets/fonts/OFL.txt`.
+- `assets/icons/*.svg` are derived from Lucide icons and are licensed under
+  the ISC License, with the applicable Feather-derived icons also covered by
+  the MIT License. The license text is in `assets/icons/LICENSE`.

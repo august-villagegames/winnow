@@ -1,9 +1,14 @@
 # Portable Winnow v2
 
-This directory is the isolated, zero-dependency Portable Winnow runtime. It
+Portable Winnow is the isolated, zero-dependency runtime for Winnow. It
 compiles a strict v2 session seed into exactly one self-contained HTML file.
 Only the current page's verdicts are persisted in the browser; later rounds
 are researched and published by an agent from a copied continuation package.
+
+The canonical standalone repository is
+<https://github.com/august-villagegames/winnow>. This content is also kept at
+`portable-poc/` inside the full `winnow-dev` repository for integration work.
+The commands below assume this directory is the current working directory.
 
 ## Local checks
 
@@ -43,3 +48,10 @@ python3 scripts/winnow.py publish next-seed.json --continuation continuation.jso
 Never add runtime network calls, agent-authored layout/CSS, hidden candidates,
 ranking weights, raw source HTML, credentials, or continuation JSON to the
 page. The only external runtime resources are cited HTTPS images.
+
+## License
+
+Winnow-authored code and documentation in this portable runtime are licensed
+under Apache-2.0. The bundled Space Grotesk font and Lucide icons retain their
+upstream licenses; see [NOTICE](NOTICE), `assets/fonts/OFL.txt`, and
+`assets/icons/LICENSE`.

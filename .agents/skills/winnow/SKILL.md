@@ -5,6 +5,9 @@ description: Research and publish a strict, self-contained anonymous Winnow v2 c
 
 # Winnow portable skill
 
+The canonical release-pinned copy of this skill is:
+<https://raw.githubusercontent.com/august-villagegames/winnow/v0.1.0/.agents/skills/winnow/SKILL.md>
+
 Use this skill for an evidence-backed comparison with structured rounds and a
 shareable session URL. Read `references/protocol.md` and
 `references/seed.schema.json` before authoring data.

@@ -1,5 +1,6 @@
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyd
 build/
 *.tmp
 qa-*.png

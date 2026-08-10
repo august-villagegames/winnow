@@ -5,7 +5,7 @@ description: Research and publish a strict, self-contained anonymous Winnow v2 c
 
 # Winnow portable skill adapter
 
-Use the canonical workflow in `portable-poc/.agents/skills/winnow/SKILL.md`.
+Use the canonical workflow in `.agents/skills/winnow/SKILL.md`.
 Read `references/protocol.md` and `references/seed.schema.json`; author a
 closed v2 seed with an immutable session, 1–6 typed factors, and 4–6 new
 source-supported options. Prefer 3–5 useful images per option when available,
