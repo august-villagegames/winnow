@@ -1,13 +1,14 @@
 {
   "protocol": "winnow.portable-session",
-  "schemaVersion": 2,
-  "runtimeVersion": "2.0.0",
+  "schemaVersion": 3,
+  "runtimeVersion": "3.0.0",
   "session": {
     "id": "synthetic-sofa-session",
     "title": "Durable couch under $2,000",
     "query": "Find a durable leather couch under $2,000 for a small living room",
     "requirements": ["Under $2k", "Leather"],
-    "primaryFactorId": "price"
+    "primaryFactorId": "price",
+    "imagePolicy": {"mode": "required"}
   },
   "history": [],
   "round": {
@@ -34,6 +35,7 @@
         "title": "Northline 3-seat sofa",
         "primarySourceId": "source-sofa-1",
         "description": {"text": "Full-grain leather sofa with a kiln-dried wood frame and a relaxed seat.", "sourceId": "source-sofa-1"},
+        "image": {"url": "https://example.com/sofas/northline.png", "alt": "Northline 3-seat sofa", "sourceId": "source-sofa-1"},
         "optionUrl": {"url": "https://example.com/sofas/northline", "sourceId": "source-sofa-1"},
         "values": [
           {"factorId": "price", "value": 1780, "sourceId": "source-sofa-1"},
@@ -48,6 +50,7 @@
         "title": "Hearth compact leather sofa",
         "primarySourceId": "source-sofa-2",
         "description": {"text": "A compact leather frame with a firmer sit and easy-care fixed upholstery.", "sourceId": "source-sofa-2"},
+        "image": {"url": "https://example.com/sofas/hearth.png", "alt": "Hearth compact leather sofa", "sourceId": "source-sofa-2"},
         "optionUrl": {"url": "https://example.com/sofas/hearth", "sourceId": "source-sofa-2"},
         "values": [
           {"factorId": "price", "value": 1420, "sourceId": "source-sofa-2"},
@@ -62,6 +65,7 @@
         "title": "Fieldstone deep-seat sofa",
         "primarySourceId": "source-sofa-3",
         "description": {"text": "A generous three-seat silhouette with a hardwood frame and deep cushions.", "sourceId": "source-sofa-3"},
+        "image": {"url": "https://example.com/sofas/fieldstone.png", "alt": "Fieldstone deep-seat sofa", "sourceId": "source-sofa-3"},
         "optionUrl": {"url": "https://example.com/sofas/fieldstone", "sourceId": "source-sofa-3"},
         "values": [
           {"factorId": "price", "value": 1960, "sourceId": "source-sofa-3"},
@@ -76,6 +80,7 @@
         "title": "Marlow apartment sofa",
         "primarySourceId": "source-sofa-4",
         "description": {"text": "A smaller leather sofa designed for narrow rooms, with a simple sturdy base.", "sourceId": "source-sofa-4"},
+        "image": {"url": "https://example.com/sofas/marlow.png", "alt": "Marlow apartment sofa", "sourceId": "source-sofa-4"},
         "optionUrl": {"url": "https://example.com/sofas/marlow", "sourceId": "source-sofa-4"},
         "values": [
           {"factorId": "price", "value": 1180, "sourceId": "source-sofa-4"},
@@ -90,6 +95,7 @@
         "title": "Cedar lounge sofa",
         "primarySourceId": "source-sofa-5",
         "description": {"text": "A low lounge profile with soft leather and removable seat and back covers.", "sourceId": "source-sofa-5"},
+        "image": {"url": "https://example.com/sofas/cedar.png", "alt": "Cedar lounge sofa", "sourceId": "source-sofa-5"},
         "optionUrl": {"url": "https://example.com/sofas/cedar", "sourceId": "source-sofa-5"},
         "values": [
           {"factorId": "price", "value": 1640, "sourceId": "source-sofa-5"},
@@ -104,6 +110,7 @@
         "title": "Loom classic sofa",
         "primarySourceId": "source-sofa-6",
         "description": {"text": "A classic rolled-arm shape with a structured seat and fixed leather upholstery.", "sourceId": "source-sofa-6"},
+        "image": {"url": "https://example.com/sofas/loom.png", "alt": "Loom classic sofa", "sourceId": "source-sofa-6"},
         "optionUrl": {"url": "https://example.com/sofas/loom", "sourceId": "source-sofa-6"},
         "values": [
           {"factorId": "price", "value": 1540, "sourceId": "source-sofa-6"},

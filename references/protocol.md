@@ -1,24 +1,26 @@
-# Portable Winnow v2 protocol
+# Portable Winnow v3 protocol
 
-Portable Winnow is a strict, immutable session seed compiled into one
-self-contained `index.html`. The runtime owns all layout, formatting, ordering,
-interaction, profile prose, and continuation construction. Agent-authored data
-is limited to the typed session, round, source, option, and verdict evidence
-defined by `seed.schema.json`.
+Portable Winnow is a strict, immutable session seed compiled in memory into one
+self-contained `index.html`, then uploaded to an anonymous hosted Site. The
+runtime owns all layout, formatting, ordering, interaction, profile prose, and
+continuation construction. Agent-authored data is limited to the typed
+session, round, source, option, and verdict evidence defined by
+`seed.schema.json`. A local HTML file is never a supported deliverable.
 
 ## Seed
 
 ```json
 {
   "protocol": "winnow.portable-session",
-  "schemaVersion": 2,
-  "runtimeVersion": "2.0.0",
+  "schemaVersion": 3,
+  "runtimeVersion": "3.0.0",
   "session": {
     "id": "session-id",
     "title": "Durable couch under $2,000",
     "query": "Original user request",
     "requirements": ["Under $2,000", "Leather"],
-    "primaryFactorId": "price"
+    "primaryFactorId": "price",
+    "imagePolicy": {"mode": "required"}
   },
   "history": [],
   "round": {"number": 1, "generatedAt": "…", "factors": [], "sources": [], "options": []}
@@ -33,9 +35,18 @@ round and is rendered only in the large value slot. Reused factor IDs retain
 the same label, value type, and display definition. Option IDs, normalized
 titles, and canonical option URLs cannot be reused anywhere in a session.
 
+Every session declares an image policy. Use `{"mode":"required"}` by default:
+each option in every round must provide at least one source-backed image. Use
+`{"mode":"notApplicable","reason":"…"}` only when the decision is clearly
+non-visual, such as a purely textual or factual comparison; the reason is
+preserved with the immutable session. Visual shopping and recommendation
+decisions (products, shoes, clothing, travel, homes, people, styles, and
+designs) require images.
+
 An option may provide either the legacy singular `image` object or the
 preferred `images` array. `images` contains 1–5 source-backed images; each
-image may use a different count across options. Before a session is linked or
+image may use a different count across options, but a required-image session
+must include at least one for every option. Before a session is linked or
 published, every unique image URL must be fetched over HTTPS and verified as a
 successful, credential-free response with an allowed raster image content type
 (`image/png`, `image/jpeg`, `image/gif`, `image/webp`, or `image/avif`) whose
@@ -58,7 +69,7 @@ The runtime copies the immutable session and completed rounds into:
 ```json
 {
   "protocol": "winnow.continuation",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "parent": {"sessionId":"session-id","roundNumber":1,"seedHash":"sha256","url":"https://example.here.now/"},
   "session": {},
   "completedRounds": [],
@@ -71,7 +82,9 @@ It never renders JSON in the page and never includes profile prose, weights,
 hidden ranking fields, source-page instructions, or a claim token. A successor
 must preserve the session byte-for-byte after canonical JSON normalization and
 copy `completedRounds` exactly into `history`; it may evolve only the
-non-primary factors and must research 4–6 entirely new options.
+non-primary factors and must research 4–6 entirely new options. It must retain
+the session image policy and collect verified images for every new option when
+the policy is `required`.
 
 Validate the workflow with:
 
@@ -82,8 +95,14 @@ python3 scripts/winnow.py validate-successor continuation.json next-seed.json
 python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
 ```
 
+Publishing is the only delivery workflow. The publisher compiles the page in
+memory, uploads it to HereNow, and returns the hosted URL. Do not invoke a
+local build step or create, open, attach, or return an HTML file or local file
+path. This keeps the renderer reusable if another hosted provider is added in
+the future.
+
 Round 1 may publish without a continuation. Later rounds require the matching
-continuation and are always published as a new anonymous here.now URL.
+continuation and are always published as a new anonymous HereNow URL.
 
 ## Runtime behavior
 

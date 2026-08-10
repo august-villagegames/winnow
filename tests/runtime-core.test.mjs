@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const core = require("../assets/runtime-core.js");
 const root = dirname(fileURLToPath(import.meta.url));
 const seed = JSON.parse(readFileSync(join(root, "../fixtures/synthetic-seed.json"), "utf8"));
+const runtimeUi = readFileSync(join(root, "../assets/runtime-ui.js"), "utf8");
 
 test("typed formatting is runtime-owned", () => {
   const price = seed.round.factors.find((factor) => factor.id === "price");
@@ -62,4 +63,10 @@ test("continuation contains exactly the completed history plus current verdicts"
   assert.equal(continuation.completedRounds[0].verdicts.length, 6);
   assert.equal(continuation.parent.roundNumber, 1);
   assert.equal(continuation.session.title, seed.session.title);
+});
+
+test("continuation handoff requires hosted publication and forbids local HTML", () => {
+  assert.match(runtimeUi, /publish it through HereNow as a new anonymous hosted URL/);
+  assert.match(runtimeUi, /never create, save, open, attach, or return a local HTML file or local file path/);
+  assert.match(runtimeUi, /HTML may be compiled only in memory as part of publishing/);
 });
