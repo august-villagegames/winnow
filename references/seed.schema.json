@@ -1,52 +1,168 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/portable-winnow/winnow-skill/references/seed.schema.json",
-  "title": "Portable Winnow session seed",
+  "title": "Portable Winnow v2 session seed",
   "type": "object",
-  "required": ["protocol", "schemaVersion", "runtimeVersion", "sessionId", "createdAt", "query", "research", "presentations", "initialRound", "localStrategy"],
+  "additionalProperties": false,
+  "required": ["protocol", "schemaVersion", "runtimeVersion", "session", "history", "round"],
   "properties": {
     "protocol": {"const": "winnow.portable-session"},
-    "schemaVersion": {"const": 1},
-    "runtimeVersion": {"const": "1.0.0"},
-    "sessionId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
-    "createdAt": {"type": "string", "format": "date-time"},
-    "query": {"type": "string", "minLength": 1, "maxLength": 1000},
-    "research": {"$ref": "#/$defs/research"},
-    "presentations": {"type": "array", "minItems": 12, "maxItems": 24},
-    "initialRound": {
-      "type": "object",
-      "required": ["candidateIds", "factorIds", "generationExplanation"],
-      "properties": {
-        "candidateIds": {"type": "array", "minItems": 4, "maxItems": 4, "uniqueItems": true},
-        "factorIds": {"type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true},
-        "generationExplanation": {"type": "string", "minLength": 1}
-      }
-    },
-    "localStrategy": {
-      "type": "object",
-      "const": {
-        "roundSize": 4,
-        "factorLimit": 6,
-        "factorWeightStep": 1.5,
-        "factorWeightMin": 0.25,
-        "factorWeightMax": 4,
-        "relevanceWeight": 0.75,
-        "diversityWeight": 0.15,
-        "evidenceWeight": 0.1
-      }
-    }
+    "schemaVersion": {"const": 2},
+    "runtimeVersion": {"const": "2.0.0"},
+    "session": {"$ref": "#/$defs/session"},
+    "history": {"type": "array", "items": {"$ref": "#/$defs/completedRound"}},
+    "round": {"$ref": "#/$defs/round"}
   },
   "$defs": {
-    "research": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
+    "plain": {"type": "string", "minLength": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "session": {
       "type": "object",
-      "required": ["asOf", "assumptions", "summary", "sources", "factors", "candidates"],
+      "additionalProperties": false,
+      "required": ["id", "title", "query", "requirements"],
       "properties": {
-        "asOf": {"type": "string", "format": "date-time"},
-        "assumptions": {"type": "array", "maxItems": 12, "items": {"type": "string"}},
-        "summary": {"type": "string", "minLength": 1},
-        "sources": {"type": "array", "minItems": 1, "maxItems": 80},
-        "factors": {"type": "array", "minItems": 6, "maxItems": 10, "uniqueItems": true},
-        "candidates": {"type": "array", "minItems": 12, "maxItems": 24, "uniqueItems": true}
+        "id": {"$ref": "#/$defs/id"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 120},
+        "query": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "requirements": {"type": "array", "minItems": 0, "maxItems": 5, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 100}},
+        "primaryFactorId": {"$ref": "#/$defs/id"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "url", "retrievedAt"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
+        "url": {"type": "string", "format": "uri", "pattern": "^https://"},
+        "retrievedAt": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "numberDisplay": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["style"], "properties": {"style": {"const": "decimal"}}},
+        {"type": "object", "additionalProperties": false, "required": ["style", "unit"], "properties": {"style": {"const": "decimal"}, "unit": {"const": "nominations"}}},
+        {"type": "object", "additionalProperties": false, "required": ["style", "currency"], "properties": {"style": {"const": "currency"}, "currency": {"const": "USD"}}},
+        {"type": "object", "additionalProperties": false, "required": ["style"], "properties": {"style": {"const": "percent"}}},
+        {"type": "object", "additionalProperties": false, "required": ["style", "unit"], "properties": {"style": {"const": "duration"}, "unit": {"enum": ["minute", "hour", "day", "week", "month", "year"]}}}
+      ]
+    },
+    "booleanDisplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["style", "trueLabel", "falseLabel"],
+      "properties": {"style": {"const": "boolean"}, "trueLabel": {"type": "string", "minLength": 1, "maxLength": 100}, "falseLabel": {"type": "string", "minLength": 1, "maxLength": 100}}
+    },
+    "textDisplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["style"],
+      "properties": {"style": {"const": "text"}}
+    },
+    "factor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "valueType", "display"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "label": {"type": "string", "minLength": 1, "maxLength": 120},
+        "valueType": {"enum": ["number", "boolean", "category", "text"]},
+        "display": {"oneOf": [{"$ref": "#/$defs/numberDisplay"}, {"$ref": "#/$defs/booleanDisplay"}, {"$ref": "#/$defs/textDisplay"}]}
+      }
+    },
+    "description": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "sourceId"],
+      "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 800}, "sourceId": {"$ref": "#/$defs/id"}}
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "alt", "sourceId"],
+      "properties": {"url": {"type": "string", "format": "uri", "pattern": "^https://"}, "alt": {"type": "string", "minLength": 1, "maxLength": 200}, "sourceId": {"$ref": "#/$defs/id"}}
+    },
+    "optionUrl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "sourceId"],
+      "properties": {"url": {"type": "string", "format": "uri", "pattern": "^https://"}, "sourceId": {"$ref": "#/$defs/id"}}
+    },
+    "value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["factorId", "value", "sourceId"],
+      "properties": {
+        "factorId": {"$ref": "#/$defs/id"},
+        "value": {"oneOf": [{"type": "number"}, {"type": "boolean"}, {"type": "string", "minLength": 1}]},
+        "sourceId": {"$ref": "#/$defs/id"}
+      }
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "primarySourceId", "values"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
+        "primarySourceId": {"$ref": "#/$defs/id"},
+        "description": {"$ref": "#/$defs/description"},
+        "image": {"$ref": "#/$defs/image"},
+        "images": {"type": "array", "minItems": 1, "maxItems": 5, "items": {"$ref": "#/$defs/image"}},
+        "optionUrl": {"$ref": "#/$defs/optionUrl"},
+        "values": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/value"}}
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["optionId", "decision"],
+      "properties": {"optionId": {"$ref": "#/$defs/id"}, "decision": {"enum": ["like", "dislike", "skip"]}}
+    },
+    "round": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "generatedAt", "factors", "sources", "options"],
+      "properties": {
+        "number": {"type": "integer", "minimum": 1},
+        "generatedAt": {"$ref": "#/$defs/timestamp"},
+        "factors": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"$ref": "#/$defs/factor"}},
+        "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}},
+        "options": {"type": "array", "minItems": 4, "maxItems": 6, "items": {"$ref": "#/$defs/option"}}
+      }
+    },
+    "completedRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "generatedAt", "factors", "sources", "options", "verdicts"],
+      "properties": {
+        "number": {"type": "integer", "minimum": 1},
+        "generatedAt": {"$ref": "#/$defs/timestamp"},
+        "factors": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"$ref": "#/$defs/factor"}},
+        "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}},
+        "options": {"type": "array", "minItems": 4, "maxItems": 6, "items": {"$ref": "#/$defs/option"}},
+        "verdicts": {"type": "array", "minItems": 4, "maxItems": 6, "items": {"$ref": "#/$defs/verdict"}}
+      }
+    },
+    "continuationParent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "roundNumber", "seedHash", "url"],
+      "properties": {"sessionId": {"$ref": "#/$defs/id"}, "roundNumber": {"type": "integer", "minimum": 1}, "seedHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "url": {"type": "string", "format": "uri", "pattern": "^https://"}}
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "schemaVersion", "parent", "session", "completedRounds", "nextRoundNumber"],
+      "properties": {
+        "protocol": {"const": "winnow.continuation"},
+        "schemaVersion": {"const": 2},
+        "parent": {"$ref": "#/$defs/continuationParent"},
+        "session": {"$ref": "#/$defs/session"},
+        "completedRounds": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/completedRound"}},
+        "nextRoundNumber": {"type": "integer", "minimum": 2}
       }
     }
   }

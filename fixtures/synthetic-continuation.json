@@ -1,0 +1,55 @@
+{
+  "protocol": "winnow.continuation",
+  "schemaVersion": 2,
+  "parent": {
+    "sessionId": "synthetic-sofa-session",
+    "roundNumber": 1,
+    "seedHash": "24bca18e8837c0e6fe68718c70855b74082162dabaf17439ff5bf9b4c8315864",
+    "url": "https://example.here.now/synthetic-sofa-round-1"
+  },
+  "session": {
+    "id": "synthetic-sofa-session",
+    "title": "Durable couch under $2,000",
+    "query": "Find a durable leather couch under $2,000 for a small living room",
+    "requirements": ["Under $2k", "Leather"],
+    "primaryFactorId": "price"
+  },
+  "completedRounds": [
+    {
+      "number": 1,
+      "generatedAt": "2026-08-09T12:00:00Z",
+      "factors": [
+        {"id": "price", "label": "Price", "valueType": "number", "display": {"style": "currency", "currency": "USD"}},
+        {"id": "material", "label": "Material", "valueType": "category", "display": {"style": "text"}},
+        {"id": "seats", "label": "Seats", "valueType": "category", "display": {"style": "text"}},
+        {"id": "frame", "label": "Frame", "valueType": "category", "display": {"style": "text"}},
+        {"id": "covers", "label": "Covers", "valueType": "boolean", "display": {"style": "boolean", "trueLabel": "Removable covers", "falseLabel": "Fixed covers"}}
+      ],
+      "sources": [
+        {"id": "source-sofa-1", "title": "Northline sofa product page", "url": "https://example.com/sofas/northline", "retrievedAt": "2026-08-09T11:30:00Z"},
+        {"id": "source-sofa-2", "title": "Hearth sofa product page", "url": "https://example.com/sofas/hearth", "retrievedAt": "2026-08-09T11:30:00Z"},
+        {"id": "source-sofa-3", "title": "Fieldstone sofa product page", "url": "https://example.com/sofas/fieldstone", "retrievedAt": "2026-08-09T11:30:00Z"},
+        {"id": "source-sofa-4", "title": "Marlow sofa product page", "url": "https://example.com/sofas/marlow", "retrievedAt": "2026-08-09T11:30:00Z"},
+        {"id": "source-sofa-5", "title": "Cedar sofa product page", "url": "https://example.com/sofas/cedar", "retrievedAt": "2026-08-09T11:30:00Z"},
+        {"id": "source-sofa-6", "title": "Loom sofa product page", "url": "https://example.com/sofas/loom", "retrievedAt": "2026-08-09T11:30:00Z"}
+      ],
+      "options": [
+        {"id":"sofa-1","title":"Northline 3-seat sofa","primarySourceId":"source-sofa-1","description":{"text":"Full-grain leather sofa with a kiln-dried wood frame and a relaxed seat.","sourceId":"source-sofa-1"},"optionUrl":{"url":"https://example.com/sofas/northline","sourceId":"source-sofa-1"},"values":[{"factorId":"price","value":1780,"sourceId":"source-sofa-1"},{"factorId":"material","value":"Full-grain leather","sourceId":"source-sofa-1"},{"factorId":"seats","value":"3-seat","sourceId":"source-sofa-1"},{"factorId":"frame","value":"Solid wood","sourceId":"source-sofa-1"},{"factorId":"covers","value":true,"sourceId":"source-sofa-1"}]},
+        {"id":"sofa-2","title":"Hearth compact leather sofa","primarySourceId":"source-sofa-2","description":{"text":"A compact leather frame with a firmer sit and easy-care fixed upholstery.","sourceId":"source-sofa-2"},"optionUrl":{"url":"https://example.com/sofas/hearth","sourceId":"source-sofa-2"},"values":[{"factorId":"price","value":1420,"sourceId":"source-sofa-2"},{"factorId":"material","value":"Top-grain leather","sourceId":"source-sofa-2"},{"factorId":"seats","value":"2.5-seat","sourceId":"source-sofa-2"},{"factorId":"frame","value":"Engineered wood","sourceId":"source-sofa-2"},{"factorId":"covers","value":false,"sourceId":"source-sofa-2"}]},
+        {"id":"sofa-3","title":"Fieldstone deep-seat sofa","primarySourceId":"source-sofa-3","description":{"text":"A generous three-seat silhouette with a hardwood frame and deep cushions.","sourceId":"source-sofa-3"},"optionUrl":{"url":"https://example.com/sofas/fieldstone","sourceId":"source-sofa-3"},"values":[{"factorId":"price","value":1960,"sourceId":"source-sofa-3"},{"factorId":"material","value":"Aniline leather","sourceId":"source-sofa-3"},{"factorId":"seats","value":"3-seat","sourceId":"source-sofa-3"},{"factorId":"frame","value":"Hardwood","sourceId":"source-sofa-3"},{"factorId":"covers","value":true,"sourceId":"source-sofa-3"}]},
+        {"id":"sofa-4","title":"Marlow apartment sofa","primarySourceId":"source-sofa-4","description":{"text":"A smaller leather sofa designed for narrow rooms, with a simple sturdy base.","sourceId":"source-sofa-4"},"optionUrl":{"url":"https://example.com/sofas/marlow","sourceId":"source-sofa-4"},"values":[{"factorId":"price","value":1180,"sourceId":"source-sofa-4"},{"factorId":"material","value":"Leather","sourceId":"source-sofa-4"},{"factorId":"seats","value":"2-seat","sourceId":"source-sofa-4"},{"factorId":"frame","value":"Solid wood","sourceId":"source-sofa-4"},{"factorId":"covers","value":false,"sourceId":"source-sofa-4"}]},
+        {"id":"sofa-5","title":"Cedar lounge sofa","primarySourceId":"source-sofa-5","description":{"text":"A low lounge profile with soft leather and removable seat and back covers.","sourceId":"source-sofa-5"},"optionUrl":{"url":"https://example.com/sofas/cedar","sourceId":"source-sofa-5"},"values":[{"factorId":"price","value":1640,"sourceId":"source-sofa-5"},{"factorId":"material","value":"Nubuck leather","sourceId":"source-sofa-5"},{"factorId":"seats","value":"3-seat","sourceId":"source-sofa-5"},{"factorId":"frame","value":"Plywood and hardwood","sourceId":"source-sofa-5"},{"factorId":"covers","value":true,"sourceId":"source-sofa-5"}]},
+        {"id":"sofa-6","title":"Loom classic sofa","primarySourceId":"source-sofa-6","description":{"text":"A classic rolled-arm shape with a structured seat and fixed leather upholstery.","sourceId":"source-sofa-6"},"optionUrl":{"url":"https://example.com/sofas/loom","sourceId":"source-sofa-6"},"values":[{"factorId":"price","value":1540,"sourceId":"source-sofa-6"},{"factorId":"material","value":"Corrected-grain leather","sourceId":"source-sofa-6"},{"factorId":"seats","value":"3-seat","sourceId":"source-sofa-6"},{"factorId":"frame","value":"Kiln-dried wood","sourceId":"source-sofa-6"},{"factorId":"covers","value":false,"sourceId":"source-sofa-6"}]}
+      ],
+      "verdicts": [
+        {"optionId":"sofa-1","decision":"like"},
+        {"optionId":"sofa-2","decision":"dislike"},
+        {"optionId":"sofa-3","decision":"like"},
+        {"optionId":"sofa-4","decision":"dislike"},
+        {"optionId":"sofa-5","decision":"like"},
+        {"optionId":"sofa-6","decision":"skip"}
+      ]
+    }
+  ],
+  "nextRoundNumber": 2
+}

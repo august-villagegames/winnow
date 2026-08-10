@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import unittest
@@ -14,74 +15,258 @@ winnow = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(winnow)
 
 
-def fixture() -> dict:
-    return json.loads((ROOT / "fixtures" / "synthetic-seed.json").read_text(encoding="utf-8"))
+def fixture(name: str = "synthetic-seed.json") -> dict:
+    return json.loads((ROOT / "fixtures" / name).read_text(encoding="utf-8"))
 
 
 class ProtocolTests(unittest.TestCase):
-    def test_synthetic_seed_validates(self):
+    def test_valid_round_one(self):
         seed = fixture()
         self.assertIs(winnow.validate_seed(seed), seed)
-        self.assertEqual(len(seed["research"]["candidates"]), 16)
+        self.assertEqual(seed["schemaVersion"], 2)
+        self.assertEqual(len(seed["round"]["options"]), 6)
 
-    def test_raw_html_is_rejected(self):
+    def test_valid_round_two_continuation_and_successor(self):
+        continuation = fixture("synthetic-continuation.json")
+        successor = fixture("synthetic-successor-seed.json")
+        self.assertIs(winnow.validate_continuation(continuation), continuation)
+        self.assertIs(winnow.validate_successor(continuation, successor), successor)
+
+    def test_unknown_keys_are_rejected_at_every_protocol_level(self):
+        cases = [
+            (lambda value: value.update({"extra": True})),
+            (lambda value: value["session"].update({"extra": True})),
+            (lambda value: value["round"].update({"extra": True})),
+            (lambda value: value["round"]["factors"][0].update({"extra": True})),
+            (lambda value: value["round"]["options"][0].update({"extra": True})),
+            (lambda value: value["round"]["options"][0]["values"][0].update({"extra": True})),
+            (lambda value: value["round"]["sources"][0].update({"extra": True})),
+        ]
+        for mutate in cases:
+            with self.subTest(mutate=mutate):
+                seed = fixture()
+                mutate(seed)
+                with self.assertRaises(winnow.ValidationError):
+                    winnow.validate_seed(seed)
+
+        continuation_cases = [
+            lambda value: value.update({"extra": True}),
+            lambda value: value["parent"].update({"extra": True}),
+            lambda value: value["session"].update({"extra": True}),
+            lambda value: value["completedRounds"][0].update({"extra": True}),
+            lambda value: value["completedRounds"][0]["verdicts"][0].update({"extra": True}),
+        ]
+        for mutate in continuation_cases:
+            with self.subTest(mutate=mutate):
+                continuation = fixture("synthetic-continuation.json")
+                mutate(continuation)
+                with self.assertRaises(winnow.ValidationError):
+                    winnow.validate_continuation(continuation)
+
+    def test_wrong_raw_datatype_is_rejected(self):
         seed = fixture()
-        seed["research"]["summary"] = "<script>alert(1)</script>"
+        seed["round"]["options"][0]["values"][0]["value"] = "1780"
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_seed(seed)
 
-    def test_unsourced_title_mismatch_is_rejected(self):
+    def test_invalid_display_combinations_are_rejected(self):
+        for display in [
+            {"style": "currency", "currency": "EUR"},
+            {"style": "duration", "unit": "fortnight"},
+            {"style": "boolean"},
+        ]:
+            with self.subTest(display=display):
+                seed = fixture()
+                seed["round"]["factors"][0]["display"] = display
+                with self.assertRaises(winnow.ValidationError):
+                    winnow.validate_seed(seed)
+
+    def test_missing_or_extra_factor_values_are_rejected(self):
         seed = fixture()
-        seed["presentations"][0]["blocks"][0]["text"] = "A different title"
+        seed["round"]["options"][0]["values"].pop()
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_seed(seed)
 
-    def test_missing_source_reference_is_rejected(self):
         seed = fixture()
-        seed["presentations"][0]["blocks"][1]["sourceId"] = "source-missing"
+        seed["round"]["options"][0]["values"][0]["factorId"] = "not-declared"
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_seed(seed)
 
-    def test_low_coverage_is_rejected(self):
+    def test_missing_source_and_unsafe_url_are_rejected(self):
         seed = fixture()
-        for candidate in seed["research"]["candidates"]:
-            for factor_id in list(candidate["facts"])[2:]:
-                candidate["facts"][factor_id] = "unknown"
+        seed["round"]["options"][0]["values"][0]["sourceId"] = "missing-source"
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_seed(seed)
 
-    def test_build_is_self_contained_and_hashable(self):
+    def test_multiple_images_are_limited_and_must_use_one_shape(self):
         seed = fixture()
-        html = winnow.build_html(seed, expires_at="2026-08-09T12:00:00Z").decode("utf-8")
-        self.assertNotIn("__WINNOW_", html)
-        self.assertIn(winnow.seed_hash(seed), html)
-        self.assertIn('content="2026-08-09T12:00:00.000Z"', html)
-        self.assertIn("connect-src 'none'", html)
-        self.assertIn('meta name="winnow-session-id"', html)
-        self.assertNotIn("fetch(", html)
+        seed["round"]["options"][0]["images"] = [
+            {"url": "https://example.com/sofas/northline-1.png", "alt": "Northline front view", "sourceId": "source-sofa-1"},
+            {"url": "https://example.com/sofas/northline-2.png", "alt": "Northline detail view", "sourceId": "source-sofa-1"},
+        ]
+        self.assertIs(winnow.validate_seed(seed), seed)
 
-    def test_continuation_inspection_requires_schema(self):
-        continuation = {
-            "protocol": "winnow.continuation",
-            "schemaVersion": 1,
-            "parent": {"sessionId": "session-1", "seedHash": "a" * 64, "researchAsOf": "2026-08-08T12:00:00Z"},
-            "query": "test",
-            "activePatterns": [],
-            "factorWeights": {"price": 1},
-            "verdictHistory": [],
-            "seenCandidateIds": [],
-            "unresolvedNotes": [],
-            "reasons": ["user_requested"],
-        }
-        summary = winnow.inspect_continuation(continuation)
-        self.assertEqual(summary["reasons"], ["user_requested"])
-        continuation["reasons"] = []
+        seed = fixture()
+        seed["round"]["options"][0]["images"] = [
+            {"url": f"https://example.com/sofas/northline-{index}.png", "alt": f"Northline view {index}", "sourceId": "source-sofa-1"}
+            for index in range(6)
+        ]
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+        seed = fixture()
+        seed["round"]["options"][0]["images"] = [
+            {"url": "https://example.com/sofas/northline-1.png", "alt": "Northline front view", "sourceId": "source-sofa-1"},
+        ]
+        seed["round"]["options"][0]["image"] = seed["round"]["options"][0]["images"][0]
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+    def test_image_verification_rejects_non_image_bytes(self):
+        seed = fixture()
+        seed["round"]["options"][0]["images"] = [
+            {"url": "https://example.com/sofas/northline.png", "alt": "Northline front view", "sourceId": "source-sofa-1"},
+        ]
+
+        class Headers(dict):
+            def get_content_type(self):
+                return self["Content-Type"].split(";", 1)[0]
+
+        class Response:
+            status = 200
+            headers = Headers({"Content-Type": "image/png", "Content-Length": "13"})
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def geturl(self):
+                return "https://example.com/sofas/northline.png"
+
+            def read(self, _limit):
+                return b"<html>not image"
+
+        with patch.object(winnow.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaises(winnow.ValidationError):
+                winnow.verify_image_urls(seed)
+
+        seed = fixture()
+        seed["round"]["sources"][0]["url"] = "https://user:password@example.com/sofas/northline"
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+    def test_raw_html_and_control_characters_are_rejected(self):
+        for value in ["<script>alert(1)</script>", "Northline\x00sofa"]:
+            seed = fixture()
+            seed["session"]["title"] = value
+            with self.subTest(value=value), self.assertRaises(winnow.ValidationError):
+                winnow.validate_seed(seed)
+
+    def test_size_limits_are_rejected(self):
+        seed = fixture()
+        seed["session"]["requirements"] = ["one", "two", "three", "four", "five", "six"]
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+        seed = fixture()
+        seed["round"]["factors"].append(copy.deepcopy(seed["round"]["factors"][0]))
+        seed["round"]["factors"][-1]["id"] = "factor-seven"
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+        seed = fixture()
+        seed["round"]["options"] = seed["round"]["options"][:3]
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+    def test_primary_factor_and_lineage_rules(self):
+        seed = fixture()
+        seed["round"]["factors"] = seed["round"]["factors"][1:]
+        for option in seed["round"]["options"]:
+            option["values"] = option["values"][1:]
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+        seed = fixture("synthetic-successor-seed.json")
+        seed["history"][0]["number"] = 2
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+        seed = fixture("synthetic-successor-seed.json")
+        seed["round"]["factors"][0]["display"] = {"style": "decimal"}
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+    def test_verdict_integrity_and_option_reuse_are_rejected(self):
+        continuation = fixture("synthetic-continuation.json")
+        continuation["completedRounds"][0]["verdicts"].pop()
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_continuation(continuation)
 
+        continuation = fixture("synthetic-continuation.json")
+        continuation["completedRounds"][0]["verdicts"][0]["optionId"] = continuation["completedRounds"][0]["verdicts"][1]["optionId"]
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_continuation(continuation)
+
+        continuation = fixture("synthetic-continuation.json")
+        successor = fixture("synthetic-successor-seed.json")
+        successor["round"]["options"][0]["id"] = "sofa-1"
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_successor(continuation, successor)
+
+        successor = fixture("synthetic-successor-seed.json")
+        successor["history"][0]["options"][0]["title"] = successor["round"]["options"][0]["title"]
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_successor(continuation, successor)
+
+    def test_successor_must_preserve_completed_rounds_and_session(self):
+        continuation = fixture("synthetic-continuation.json")
+        successor = fixture("synthetic-successor-seed.json")
+        successor["session"]["title"] = "Changed title"
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_successor(continuation, successor)
+
+        successor = fixture("synthetic-successor-seed.json")
+        successor["history"] = []
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_successor(continuation, successor)
+
+    def test_build_is_self_contained(self):
+        html = winnow.build_html(fixture(), expires_at="2026-08-09T12:00:00Z").decode("utf-8")
+        self.assertNotIn("__WINNOW_", html)
+        self.assertIn(winnow.seed_hash(fixture()), html)
+        self.assertIn('content="2026-08-09T12:00:00.000Z"', html)
+        self.assertIn("data:font/woff2;base64,", html)
+        self.assertIn("Generate a better round", html)
+        self.assertIn("connect-src 'none'", html)
+        self.assertNotIn("fetch(", html)
+
+    def test_build_compiles_multiple_images_for_the_runtime_carousel(self):
+        seed = fixture()
+        seed["round"]["options"][0]["images"] = [
+            {"url": "https://example.com/sofas/northline-1.png", "alt": "Northline front view", "sourceId": "source-sofa-1"},
+            {"url": "https://example.com/sofas/northline-2.png", "alt": "Northline detail view", "sourceId": "source-sofa-1"},
+        ]
+        html = winnow.build_html(seed).decode("utf-8")
+        self.assertIn("data-carousel", html)
+        self.assertIn(winnow.seed_hash(seed), html)
+
+    def test_later_round_publish_requires_continuation(self):
+        with self.assertRaises(winnow.ValidationError):
+            winnow.publish(fixture("synthetic-successor-seed.json"), endpoint="https://mock.here.now/api/v1/publish")
+
 
 class PublisherTests(unittest.TestCase):
-    def test_publish_is_anonymous_new_site_and_discards_claim_token(self):
+    def test_publish_image_verification_is_a_hard_gate(self):
+        with patch.object(winnow, "verify_image_urls", side_effect=winnow.ValidationError(["image verification failed"])) as verify, patch.object(winnow, "_http_json") as request:
+            with self.assertRaises(winnow.ValidationError):
+                winnow.publish(fixture(), endpoint="https://mock.here.now/api/v1/publish")
+        verify.assert_called_once()
+        request.assert_not_called()
+
+    def test_publish_is_anonymous_and_returns_round_number_without_claim_token(self):
         base_url = "https://mock.here.now"
         requests: list[tuple[str, str, dict | None, dict | None]] = []
         uploaded: list[bytes] = []
@@ -114,14 +299,12 @@ class PublisherTests(unittest.TestCase):
             result = winnow.publish(fixture(), endpoint=base_url + "/api/v1/publish")
 
         self.assertEqual(result["siteUrl"], base_url + "/site")
+        self.assertEqual(result["roundNumber"], 1)
         self.assertNotIn("claimToken", json.dumps(result))
-        self.assertIn(b'content="2026-08-09T12:00:00.000Z"', uploaded[0])
+        self.assertIn(b"content=\"2026-08-09T12:00:00.000Z\"", uploaded[0])
         self.assertEqual([method for method, _url, _body, _headers in requests], ["POST", "PUT", "POST", "GET"])
         for _method, _url, _body, headers in requests:
             self.assertNotIn("Authorization", headers or {})
-        create_body = requests[0][2]
-        self.assertNotIn("claimToken", create_body)
-        self.assertNotIn("hash", create_body["files"][0])
 
 
 if __name__ == "__main__":

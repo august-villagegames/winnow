@@ -1,96 +1,101 @@
-# Portable Winnow protocol
+# Portable Winnow v2 protocol
 
-Portable Winnow is an immutable research seed plus a browser-local event log.
-The seed is compiled into `assets/runtime.html`; no Winnow backend is needed
-after publication.
+Portable Winnow is a strict, immutable session seed compiled into one
+self-contained `index.html`. The runtime owns all layout, formatting, ordering,
+interaction, profile prose, and continuation construction. Agent-authored data
+is limited to the typed session, round, source, option, and verdict evidence
+defined by `seed.schema.json`.
 
 ## Seed
-
-The top-level object must have:
 
 ```json
 {
   "protocol": "winnow.portable-session",
-  "schemaVersion": 1,
-  "runtimeVersion": "1.0.0",
-  "sessionId": "stable-agent-generated-id",
-  "createdAt": "2026-08-08T12:00:00Z",
-  "query": "the user's request",
-  "research": {"asOf":"…","assumptions":[],"summary":"…","sources":[],"factors":[],"candidates":[]},
-  "presentations": [],
-  "initialRound": {"candidateIds":[],"factorIds":[],"generationExplanation":"…"},
-  "localStrategy": {
-    "roundSize": 4,
-    "factorLimit": 6,
-    "factorWeightStep": 1.5,
-    "factorWeightMin": 0.25,
-    "factorWeightMax": 4,
-    "relevanceWeight": 0.75,
-    "diversityWeight": 0.15,
-    "evidenceWeight": 0.1
-  }
+  "schemaVersion": 2,
+  "runtimeVersion": "2.0.0",
+  "session": {
+    "id": "session-id",
+    "title": "Durable couch under $2,000",
+    "query": "Original user request",
+    "requirements": ["Under $2,000", "Leather"],
+    "primaryFactorId": "price"
+  },
+  "history": [],
+  "round": {"number": 1, "generatedAt": "…", "factors": [], "sources": [], "options": []}
 }
 ```
 
-The compiler requires 12–24 candidates, 6–10 factors, one presentation per
-candidate, four initial candidates, HTTPS sources, and usable facts for at
-least 70% of all candidate/factor pairs. `unknown` is the only permitted
-explicit absence of evidence. IDs are unique and candidate facts can only use
-declared factor IDs.
+Every object is closed. Unknown keys, raw HTML, control characters, unsafe or
+credential-bearing URLs, missing sources, missing factor values, and undeclared
+factor values are rejected. A round has 1–6 factors, 4–6 options, and one
+typed value per factor on every option. A primary factor is present in every
+round and is rendered only in the large value slot. Reused factor IDs retain
+the same label, value type, and display definition. Option IDs, normalized
+titles, and canonical option URLs cannot be reused anywhere in a session.
 
-Presentation blocks are safe primitives: `title`, `text`, `metric-grid`,
-`badge-list`, `link`, and `image`. Every claim-bearing block cites a source.
-The title must equal the researched candidate name. Image and link hosts must
-match the cited source host. The compiler rejects raw HTML, non-HTTPS URLs,
-missing references, duplicate IDs, and unsupported versions.
+An option may provide either the legacy singular `image` object or the
+preferred `images` array. `images` contains 1–5 source-backed images; each
+image may use a different count across options. Before a session is linked or
+published, every unique image URL must be fetched over HTTPS and verified as a
+successful, credential-free response with an allowed raster image content type
+(`image/png`, `image/jpeg`, `image/gif`, `image/webp`, or `image/avif`) whose
+bytes match the declared type and remain below the verifier's size limit.
+Redirects must remain HTTPS and the final response must not be HTML, JSON,
+empty, oversized, or a content-type mismatch. Run
+`python3 scripts/winnow.py verify-images seed.json` before publishing; publish
+also runs this gate automatically.
 
-## Local state
+## History and continuation
 
-The browser stores this append-only state, keyed by the SHA-256 hash of the
-seed:
+Completed history rounds add exactly one verdict for every option:
+
+```json
+{"number":1,"generatedAt":"…","factors":[],"sources":[],"options":[],"verdicts":[{"optionId":"sofa-1","decision":"like"}]}
+```
+
+The runtime copies the immutable session and completed rounds into:
 
 ```json
 {
-  "protocol": "winnow.local-state",
-  "schemaVersion": 1,
-  "seedHash": "sha256",
-  "revision": 3,
-  "status": "ready",
-  "events": []
+  "protocol": "winnow.continuation",
+  "schemaVersion": 2,
+  "parent": {"sessionId":"session-id","roundNumber":1,"seedHash":"sha256","url":"https://example.here.now/"},
+  "session": {},
+  "completedRounds": [],
+  "nextRoundNumber": 2
 }
 ```
 
-IndexedDB is preferred, followed by localStorage and then an in-memory
-fallback. Events are replayed deterministically. BroadcastChannel messages
-allow another tab to refresh instead of overwriting a newer revision. Small
-event logs are mirrored to `#w1=<base64url>.<sha256-prefix>`; larger logs are
-kept in IndexedDB and the user is directed to the complete export.
+The clipboard handoff contains one fixed instruction plus the fenced package.
+It never renders JSON in the page and never includes profile prose, weights,
+hidden ranking fields, source-page instructions, or a claim token. A successor
+must preserve the session byte-for-byte after canonical JSON normalization and
+copy `completedRounds` exactly into `history`; it may evolve only the
+non-primary factors and must research 4–6 entirely new options.
 
-## Selection
+Validate the workflow with:
 
-Similarity is computed only from researched facts. Numbers are normalized over
-the corpus, arrays use Jaccard similarity, and strings/booleans/categories use
-exact equality. Unknown values do not enter the denominator. A candidate's
-preference is the mean similarity to likes and mean dissimilarity to dislikes;
-with no verdicts it is 0.5. Greedy selection uses:
-
-```text
-0.75 × preference + 0.15 × within-deck diversity + 0.10 × evidence coverage
+```sh
+python3 scripts/winnow.py validate seed.json
+python3 scripts/winnow.py inspect-continuation continuation.json
+python3 scripts/winnow.py validate-successor continuation.json next-seed.json
+python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
 ```
 
-Ties break by candidate ID. Skips mark a candidate seen but contribute no
-preference. The latest verdict wins. More/Less factor controls multiply or
-divide weights by 1.5, clamped to 0.25–4; rejecting a learned pattern resets
-that factor to 1.
+Round 1 may publish without a continuation. Later rounds require the matching
+continuation and are always published as a new anonymous here.now URL.
 
-Free text is persisted as an unresolved note. It is surfaced in the
-continuation package and never changes ranking through keyword heuristics.
+## Runtime behavior
 
-## Continuation
+The browser stores only current-page verdict events, keyed by seed hash, with
+IndexedDB first, localStorage fallback, then memory. It resumes the first
+unrated option after reload. Left/right reactions mean dislike/like; upward
+swipe, `ArrowUp`, or `S` means skip. Reactions are final and the completed
+round automatically becomes a summary.
 
-The runtime can produce `winnow.continuation` JSON containing the parent
-lineage, active patterns, factor weights, latest verdict history, seen IDs,
-unresolved notes, and reasons for new research. A receiving agent must validate
-it, research new evidence/candidates, exclude exhausted candidates, produce a
-complete successor seed, and publish a new anonymous Site. It must never
-update or depend on the parent Site.
+The local profile combines all reacted options across history and the current
+round. Numeric factors require three comparable reactions, both a like and a
+dislike, and normalized strength of at least 0.20. Boolean/category factors
+require a frequency difference of at least 0.25. Skips and free-text factors
+do not create patterns. The runtime sorts patterns by strength and shows at
+most three; otherwise it shows the contrast-needed message.

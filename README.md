@@ -1,56 +1,45 @@
-# Portable Winnow pilot
+# Portable Winnow v2
 
-This directory is a risk-isolated, zero-dependency prototype of Winnow. It is
-not imported by the MCP application and is intentionally publishable as a
-future standalone `winnow-skill` repository.
+This directory is the isolated, zero-dependency Portable Winnow runtime. It
+compiles a strict v2 session seed into exactly one self-contained HTML file.
+Only the current page's verdicts are persisted in the browser; later rounds
+are researched and published by an agent from a copied continuation package.
 
-The agent researches a broad candidate corpus, validates a JSON seed, compiles
-one self-contained HTML file, and anonymously publishes a new here.now Site.
-After publication, rounds run locally from researched facts and structured
-feedback. IndexedDB is the preferred event store, with localStorage and an
-in-memory fallback. Small histories are mirrored in a URL fragment; complete
-exports and continuation packages are available from the page.
-
-## Safe local pilot
-
-From this directory:
+## Local checks
 
 ```sh
 python3 scripts/winnow.py validate fixtures/synthetic-seed.json
+python3 scripts/winnow.py verify-images fixtures/synthetic-seed.json
 python3 scripts/winnow.py build fixtures/synthetic-seed.json /tmp/winnow-index.html
+python3 scripts/winnow.py inspect-continuation fixtures/synthetic-continuation.json
+python3 scripts/winnow.py validate-successor fixtures/synthetic-continuation.json fixtures/synthetic-successor-seed.json
 python3 -m unittest discover -s tests -v
+node --test tests/runtime-core.test.mjs
 ```
 
-Open the built HTML in a browser or serve it from a local static server. Rate
-all four initial cards, use More/Less on factors, add a note, and repeat for at
-least three rounds. Reload to test persistence. Use the session-link and full
-export controls to test transfer, then give the continuation JSON to a fresh
-agent.
+Open `/tmp/winnow-index.html` or serve it from a local static server. Rate all
+six cards to see the summary, then use `Generate a better round →` to copy the
+fixed agent handoff and continuation package.
 
-Only after the synthetic flow passes should an agent run `publish`. Publishing
-creates a new anonymous Site, uploads no credentials, and returns a URL that
-expires after 24 hours. The URL exposes the embedded research to anyone who has
-it.
+Options may use the legacy singular `image` field or the preferred `images`
+array with up to five images. Multiple images appear as an accessible carousel;
+the runtime falls back cleanly when a source-backed image fails to load.
 
-## Boundaries
+## Agent workflow
 
-- All prototype files are under `portable-poc/`.
-- The runtime has no Winnow backend, polling, MCP transport, or agent
-  connection. Its CSP sets `connect-src 'none'`.
-- Every `publish` call creates a new anonymous Site; the CLI has no update or
-  claim operation and discards claim-token data.
-- Free text is persisted as unresolved context for the assistant and never
-  affects local ranking.
-- This pilot does not change `server.ts`, MCP modules/transports, Next routes,
-  session persistence, root dependencies, build scripts, Docker, or deploy
-  configuration.
+For an initial request, read `references/protocol.md` and
+`references/seed.schema.json`, establish the immutable session fields, research
+broadly in private, select only 4–6 representative source-supported options,
+choose 1–6 comparison factors, validate, compile, and publish Round 1.
 
-## Test and isolation gate
-
-Run the Python tests, then inspect the branch before committing:
+For a continuation, validate the package, preserve the session and all
+completed rounds exactly, use the full verdict history as evidence, research
+4–6 new options, validate the successor, and publish it as a new anonymous URL:
 
 ```sh
-git diff --name-only 41e7597...HEAD
+python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
 ```
 
-Every path must begin with `portable-poc/`.
+Never add runtime network calls, agent-authored layout/CSS, hidden candidates,
+ranking weights, raw source HTML, credentials, or continuation JSON to the
+page. The only external runtime resources are cited HTTPS images.
