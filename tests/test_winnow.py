@@ -23,7 +23,7 @@ class ProtocolTests(unittest.TestCase):
     def test_valid_round_one(self):
         seed = fixture()
         self.assertIs(winnow.validate_seed(seed), seed)
-        self.assertEqual(seed["schemaVersion"], 2)
+        self.assertEqual(seed["schemaVersion"], 3)
         self.assertEqual(len(seed["round"]["options"]), 6)
 
     def test_valid_round_two_continuation_and_successor(self):
@@ -87,6 +87,26 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_seed(seed)
 
+    def test_image_policy_requires_images_or_explicit_non_visual_exception(self):
+        seed = fixture()
+        seed["round"]["options"][0].pop("image")
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+        seed = fixture()
+        seed["session"]["imagePolicy"] = {"mode": "notApplicable", "reason": "Synthetic text-only comparison fixture."}
+        for option in seed["round"]["options"]:
+            option.pop("image")
+        self.assertIs(winnow.validate_seed(seed), seed)
+
+        seed["round"]["options"][0]["image"] = {
+            "url": "https://example.com/sofas/northline.png",
+            "alt": "Northline 3-seat sofa",
+            "sourceId": "source-sofa-1",
+        }
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
         seed = fixture()
         seed["round"]["options"][0]["values"][0]["factorId"] = "not-declared"
         with self.assertRaises(winnow.ValidationError):
@@ -100,6 +120,7 @@ class ProtocolTests(unittest.TestCase):
 
     def test_multiple_images_are_limited_and_must_use_one_shape(self):
         seed = fixture()
+        seed["round"]["options"][0].pop("image")
         seed["round"]["options"][0]["images"] = [
             {"url": "https://example.com/sofas/northline-1.png", "alt": "Northline front view", "sourceId": "source-sofa-1"},
             {"url": "https://example.com/sofas/northline-2.png", "alt": "Northline detail view", "sourceId": "source-sofa-1"},
@@ -107,6 +128,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertIs(winnow.validate_seed(seed), seed)
 
         seed = fixture()
+        seed["round"]["options"][0].pop("image")
         seed["round"]["options"][0]["images"] = [
             {"url": f"https://example.com/sofas/northline-{index}.png", "alt": f"Northline view {index}", "sourceId": "source-sofa-1"}
             for index in range(6)
@@ -115,6 +137,7 @@ class ProtocolTests(unittest.TestCase):
             winnow.validate_seed(seed)
 
         seed = fixture()
+        seed["round"]["options"][0].pop("image")
         seed["round"]["options"][0]["images"] = [
             {"url": "https://example.com/sofas/northline-1.png", "alt": "Northline front view", "sourceId": "source-sofa-1"},
         ]
@@ -240,11 +263,14 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn('content="2026-08-09T12:00:00.000Z"', html)
         self.assertIn("data:font/woff2;base64,", html)
         self.assertIn("Generate a better round", html)
+        self.assertIn("Image unavailable", html)
+        self.assertIn("imagePolicy", html)
         self.assertIn("connect-src 'none'", html)
         self.assertNotIn("fetch(", html)
 
     def test_build_compiles_multiple_images_for_the_runtime_carousel(self):
         seed = fixture()
+        seed["round"]["options"][0].pop("image")
         seed["round"]["options"][0]["images"] = [
             {"url": "https://example.com/sofas/northline-1.png", "alt": "Northline front view", "sourceId": "source-sofa-1"},
             {"url": "https://example.com/sofas/northline-2.png", "alt": "Northline detail view", "sourceId": "source-sofa-1"},
@@ -256,6 +282,11 @@ class ProtocolTests(unittest.TestCase):
     def test_later_round_publish_requires_continuation(self):
         with self.assertRaises(winnow.ValidationError):
             winnow.publish(fixture("synthetic-successor-seed.json"), endpoint="https://mock.here.now/api/v1/publish")
+
+    def test_local_build_command_is_not_available(self):
+        with self.assertRaises(SystemExit) as raised:
+            winnow.main(["build", "seed.json", "/tmp/winnow-index.html"])
+        self.assertEqual(raised.exception.code, 2)
 
 
 class PublisherTests(unittest.TestCase):
@@ -295,7 +326,7 @@ class PublisherTests(unittest.TestCase):
         def fake_fetch(url, expected_session_id, *, allow_http=False, timeout=30):
             requests.append(("GET", url, None, None))
 
-        with patch.object(winnow, "_http_json", side_effect=fake_json), patch.object(winnow, "_http_upload", side_effect=fake_upload), patch.object(winnow, "_fetch_live", side_effect=fake_fetch):
+        with patch.object(winnow, "verify_image_urls", return_value={"images": 6, "uniqueImages": 6, "verified": []}), patch.object(winnow, "_http_json", side_effect=fake_json), patch.object(winnow, "_http_upload", side_effect=fake_upload), patch.object(winnow, "_fetch_live", side_effect=fake_fetch):
             result = winnow.publish(fixture(), endpoint=base_url + "/api/v1/publish")
 
         self.assertEqual(result["siteUrl"], base_url + "/site")

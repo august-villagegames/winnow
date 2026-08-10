@@ -6,8 +6,8 @@
 
   const PROTOCOL = "winnow.portable-session";
   const CONTINUATION_PROTOCOL = "winnow.continuation";
-  const SCHEMA_VERSION = 2;
-  const RUNTIME_VERSION = "2.0.0";
+  const SCHEMA_VERSION = 3;
+  const RUNTIME_VERSION = "3.0.0";
   const FALLBACK_PROFILE = "More contrast is needed before Winnow can identify a pattern.";
 
   function clone(value) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate, compile, and anonymously publish Portable Winnow v2 sessions."""
+"""Validate, compile, and anonymously publish Portable Winnow v3 sessions."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ from typing import Any, Iterable
 
 
 PROTOCOL = "winnow.portable-session"
-SCHEMA_VERSION = 2
-RUNTIME_VERSION = "2.0.0"
+SCHEMA_VERSION = 3
+RUNTIME_VERSION = "3.0.0"
 CONTINUATION_PROTOCOL = "winnow.continuation"
 PUBLISH_ENDPOINT = "https://here.now/api/v1/publish"
 CONTENT_TYPE = "text/html; charset=utf-8"
@@ -374,14 +374,38 @@ def _canonical_url(value: str) -> str:
 
 
 def _validate_session(value: Any, path: str = "seed.session") -> dict[str, Any]:
-    value = _object(value, path, {"id", "title", "query", "requirements", "primaryFactorId"})
+    value = _object(value, path, {"id", "title", "query", "requirements", "primaryFactorId", "imagePolicy"})
     _id(_required(value, "id", path), f"{path}.id")
     _plain(_required(value, "title", path), f"{path}.title", max_length=120, trimmed=True)
     _plain(_required(value, "query", path), f"{path}.query", max_length=1000)
     _string_array(_required(value, "requirements", path), f"{path}.requirements", max_items=5, max_length=100)
     if "primaryFactorId" in value:
         _id(value["primaryFactorId"], f"{path}.primaryFactorId")
+    policy = _object(_required(value, "imagePolicy", path), f"{path}.imagePolicy", {"mode", "reason"})
+    mode = policy.get("mode")
+    if mode == "required":
+        _object(policy, f"{path}.imagePolicy", {"mode"})
+    elif mode == "notApplicable":
+        _object(policy, f"{path}.imagePolicy", {"mode", "reason"})
+        _plain(_required(policy, "reason", f"{path}.imagePolicy"), f"{path}.imagePolicy.reason", max_length=300)
+    else:
+        raise ValidationError([f"{path}.imagePolicy.mode: expected required or notApplicable"])
     return value
+
+
+def _validate_image_policy(rounds: list[dict[str, Any]], session: dict[str, Any]) -> None:
+    mode = session["imagePolicy"]["mode"]
+    errors: list[str] = []
+    for round_value in rounds:
+        for option_index, option in enumerate(round_value["options"]):
+            has_images = "image" in option or "images" in option
+            path = f"round {round_value['number']}.options[{option_index}]"
+            if mode == "required" and not has_images:
+                errors.append(f"{path}: requires at least one image because session.imagePolicy.mode is required")
+            elif mode == "notApplicable" and has_images:
+                errors.append(f"{path}: images are not allowed because session.imagePolicy.mode is notApplicable")
+    if errors:
+        raise ValidationError(errors)
 
 
 def validate_seed(seed: Any) -> dict[str, Any]:
@@ -397,6 +421,7 @@ def validate_seed(seed: Any) -> dict[str, Any]:
     history = [_validate_round(value, index + 1, True, f"seed.history[{index}]") for index, value in enumerate(history_raw)]
     current = _validate_round(_required(root, "round", "seed"), len(history) + 1, False, "seed.round")
     _validate_round_lineage([*history, current], session)
+    _validate_image_policy([*history, current], session)
     return root
 
 
@@ -424,6 +449,7 @@ def validate_continuation(value: Any) -> dict[str, Any]:
     if parent["sessionId"] != session["id"]:
         raise ValidationError(["continuation.parent.sessionId: does not match continuation.session.id"])
     _validate_round_lineage(completed, session)
+    _validate_image_policy(completed, session)
     parent_round = {key: value for key, value in completed[-1].items() if key != "verdicts"}
     parent_seed = {"protocol": PROTOCOL, "schemaVersion": SCHEMA_VERSION, "runtimeVersion": RUNTIME_VERSION, "session": session, "history": completed[:-1], "round": parent_round}
     if seed_hash(parent_seed) != parent["seedHash"]:
@@ -686,17 +712,13 @@ def inspect_continuation(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Portable Winnow v2 compiler and anonymous here.now publisher")
+    parser = argparse.ArgumentParser(description="Portable Winnow v3 compiler and anonymous here.now publisher")
     subparsers = parser.add_subparsers(dest="command", required=True)
     validate_parser = subparsers.add_parser("validate", help="validate a seed JSON file")
     validate_parser.add_argument("seed", type=Path)
     verify_images_parser = subparsers.add_parser("verify-images", help="fetch and verify every seed image URL")
     verify_images_parser.add_argument("seed", type=Path)
     verify_images_parser.add_argument("--timeout", type=float, default=15, help="per-image network timeout in seconds")
-    build_parser = subparsers.add_parser("build", help="build a self-contained HTML session")
-    build_parser.add_argument("seed", type=Path)
-    build_parser.add_argument("output", type=Path)
-    build_parser.add_argument("--expires-at")
     inspect_parser = subparsers.add_parser("inspect-continuation", help="validate and summarize a continuation package")
     inspect_parser.add_argument("continuation", type=Path)
     successor_parser = subparsers.add_parser("validate-successor", help="validate a successor seed against a continuation")
@@ -716,11 +738,6 @@ def main(argv: list[str]) -> int:
         elif args.command == "verify-images":
             result = verify_image_urls(read_json(args.seed), timeout=args.timeout)
             print(json.dumps({"valid": True, **result}, separators=(",", ":")))
-        elif args.command == "build":
-            seed = read_json(args.seed)
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_bytes(build_html(seed, expires_at=args.expires_at))
-            print(json.dumps({"output": str(args.output), "seedHash": seed_hash(seed)}, separators=(",", ":")))
         elif args.command == "inspect-continuation":
             print(json.dumps(inspect_continuation(read_json(args.continuation)), separators=(",", ":")))
         elif args.command == "validate-successor":

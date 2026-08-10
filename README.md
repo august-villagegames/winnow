@@ -1,9 +1,11 @@
-# Portable Winnow v2
+# Portable Winnow v3
 
-Portable Winnow is the isolated, zero-dependency runtime for Winnow. It
-compiles a strict v2 session seed into exactly one self-contained HTML file.
-Only the current page's verdicts are persisted in the browser; later rounds
-are researched and published by an agent from a copied continuation package.
+This directory is the isolated, zero-dependency Portable Winnow runtime. It
+compiles a strict v3 session seed into exactly one self-contained HTML page in
+memory, then publishes that page to an anonymous hosted Site. There is no
+supported local HTML artifact workflow. Only the current page's verdicts are
+persisted in the browser; later rounds are researched and published by an
+agent from a copied continuation package.
 
 The canonical standalone repository is
 <https://github.com/august-villagegames/winnow>. This content is also kept at
@@ -14,32 +16,48 @@ The commands below assume this directory is the current working directory.
 
 ```sh
 python3 scripts/winnow.py validate fixtures/synthetic-seed.json
-python3 scripts/winnow.py verify-images fixtures/synthetic-seed.json
-python3 scripts/winnow.py build fixtures/synthetic-seed.json /tmp/winnow-index.html
 python3 scripts/winnow.py inspect-continuation fixtures/synthetic-continuation.json
 python3 scripts/winnow.py validate-successor fixtures/synthetic-continuation.json fixtures/synthetic-successor-seed.json
 python3 -m unittest discover -s tests -v
 node --test tests/runtime-core.test.mjs
 ```
 
-Open `/tmp/winnow-index.html` or serve it from a local static server. Rate all
-six cards to see the summary, then use `Generate a better round →` to copy the
-fixed agent handoff and continuation package.
+Use `python3 scripts/winnow.py publish seed.json` to deliver a session. The
+command returns the hosted HereNow URL; do not create, open, or return a local
+HTML file or local file path. Rate all six cards at the hosted URL to see the
+summary, then use `Generate a better round →` to copy the fixed agent handoff
+and continuation package.
+
+The synthetic fixture uses reserved `example.com` image URLs to exercise the
+compiled media and browser fallback; run `verify-images` against a researched
+seed with real source-backed URLs before publishing.
 
 Options may use the legacy singular `image` field or the preferred `images`
-array with up to five images. Multiple images appear as an accessible carousel;
-the runtime falls back cleanly when a source-backed image fails to load.
+array with up to five images. Every session is image-required by default;
+declare `session.imagePolicy.mode` as `notApplicable` with a reason only for a
+clearly non-visual decision. Multiple images appear as an accessible carousel.
+If a verified image later fails in the browser, the runtime keeps the media
+slot and announces `Image unavailable` instead of silently removing it.
 
 ## Agent workflow
 
 For an initial request, read `references/protocol.md` and
 `references/seed.schema.json`, establish the immutable session fields, research
 broadly in private, select only 4–6 representative source-supported options,
-choose 1–6 comparison factors, validate, compile, and publish Round 1.
+decide the session image policy, choose 1–6 comparison factors, collect at
+least one direct source-backed image for every option unless the policy is
+explicitly `notApplicable`, validate, and publish Round 1 through HereNow.
+The hosted URL is the only deliverable: never create, open, attach, or return
+a local HTML file or local file path. Treat
+shopping for products, shoes, clothing, travel, homes, people, styles, and
+designs as visual decisions that require images.
 
 For a continuation, validate the package, preserve the session and all
 completed rounds exactly, use the full verdict history as evidence, research
-4–6 new options, validate the successor, and publish it as a new anonymous URL:
+4–6 new options, preserve the session image policy, add verified images for
+every new option when required, validate the successor, and publish it as a new
+anonymous HereNow URL. Return the hosted URL, never a generated local HTML
+artifact:
 
 ```sh
 python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
