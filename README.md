@@ -14,19 +14,45 @@ The commands below assume this directory is the current working directory.
 
 ## Local checks
 
+Run the initial-round commands in this order. `publish` is the only delivery
+workflow; it compiles the page in memory, uploads it to HereNow, and verifies
+the live hosted page.
+
+```sh
+python3 scripts/winnow.py validate seed.json
+python3 scripts/winnow.py verify-images seed.json
+python3 scripts/winnow.py publish seed.json
+```
+
+For the included synthetic fixture, the schema-only check is:
+
 ```sh
 python3 scripts/winnow.py validate fixtures/synthetic-seed.json
+```
+
+Its reserved `example.com` image URLs are intentionally not fetchable, so use
+a researched seed with real source-backed image URLs for `verify-images` and
+`publish`. For a continuation, validate the copied package and successor
+before publishing a new anonymous URL:
+
+```sh
 python3 scripts/winnow.py inspect-continuation fixtures/synthetic-continuation.json
 python3 scripts/winnow.py validate-successor fixtures/synthetic-continuation.json fixtures/synthetic-successor-seed.json
+python3 scripts/winnow.py verify-images next-seed.json
+python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
+```
+
+Run the repository tests as well:
+
+```sh
 python3 -m unittest discover -s tests -v
 node --test tests/runtime-core.test.mjs
 ```
 
-Use `python3 scripts/winnow.py publish seed.json` to deliver a session. The
-command returns the hosted HereNow URL; do not create, open, or return a local
-HTML file or local file path. Rate all six cards at the hosted URL to see the
-summary, then use `Generate a better round →` to copy the fixed agent handoff
-and continuation package.
+The publish command returns the hosted HereNow URL; do not create, open, or
+return a local HTML file or local file path. Rate all six cards at the hosted
+URL to see the summary, then use `Generate a better round →` to copy the fixed
+agent handoff and continuation package.
 
 The synthetic fixture uses reserved `example.com` image URLs to exercise the
 compiled media and browser fallback; run `verify-images` against a researched
@@ -46,7 +72,8 @@ For an initial request, read `references/protocol.md` and
 broadly in private, select only 4–6 representative source-supported options,
 decide the session image policy, choose 1–6 comparison factors, collect at
 least one direct source-backed image for every option unless the policy is
-explicitly `notApplicable`, validate, and publish Round 1 through HereNow.
+explicitly `notApplicable`, validate, verify images, and publish Round 1
+through HereNow.
 The hosted URL is the only deliverable: never create, open, attach, or return
 a local HTML file or local file path. Treat
 shopping for products, shoes, clothing, travel, homes, people, styles, and

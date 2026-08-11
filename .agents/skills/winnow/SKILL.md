@@ -1,12 +1,9 @@
 ---
 name: winnow
-description: Research and publish a strict, self-contained anonymous Winnow v2 comparison session.
+description: Research and publish a strict, self-contained anonymous Winnow v3 comparison session.
 ---
 
 # Winnow portable skill
-
-The canonical release-pinned copy of this skill is:
-<https://raw.githubusercontent.com/august-villagegames/winnow/v0.1.0/.agents/skills/winnow/SKILL.md>
 
 Use this skill for an evidence-backed comparison with structured rounds and a
 shareable session URL. Read `references/protocol.md` and
@@ -29,7 +26,6 @@ shareable session URL. Read `references/protocol.md` and
    ```sh
    python3 scripts/winnow.py validate seed.json
    python3 scripts/winnow.py verify-images seed.json
-   python3 scripts/winnow.py build seed.json index.html
    python3 scripts/winnow.py publish seed.json
    ```
 
@@ -44,6 +40,11 @@ shareable session URL. Read `references/protocol.md` and
 The runtime owns every structural, visual, interaction, ordering, formatting,
 and profile decision. Do not add agent-authored layout, CSS, badges, ranking
 weights, summaries, or controls to the seed.
+
+After every publish, open the returned HereNow URL in a browser and confirm
+that the hosted runtime renders and the current round is usable before
+returning the URL. Never create, open, attach, or return a local HTML file or
+local file path.
 
 ## Later rounds
 

@@ -19,6 +19,13 @@ def fixture(name: str = "synthetic-seed.json") -> dict:
     return json.loads((ROOT / "fixtures" / name).read_text(encoding="utf-8"))
 
 
+class RepositoryChecks(unittest.TestCase):
+    def test_winnow_skill_copies_are_identical(self):
+        canonical = (ROOT / ".agents" / "skills" / "winnow" / "SKILL.md").read_bytes()
+        claude = (ROOT / ".claude" / "skills" / "winnow" / "SKILL.md").read_bytes()
+        self.assertEqual(claude, canonical, "Claude and agent Winnow skills must stay byte-for-byte identical")
+
+
 class ProtocolTests(unittest.TestCase):
     def test_valid_round_one(self):
         seed = fixture()
