@@ -27,7 +27,9 @@ shareable session URL. Read `references/protocol.md` and
    image. Prefer the `images` array with 1–5 images per option (counts may
    differ); the legacy singular `image` field is also supported.
 5. Validate every image URL before linking the session. This is a hard gate,
-   not a best-effort check:
+   not a best-effort check. An image's `sourceId` cites the supporting source
+   page, but the direct image URL may be hosted on a separate CDN or another
+   domain:
 
    ```sh
    python3 scripts/winnow.py validate seed.json
@@ -48,9 +50,13 @@ and profile decision. Do not add agent-authored layout, CSS, badges, ranking
 weights, summaries, or controls to the seed.
 
 After every publish, open the returned HereNow URL in a browser and confirm
-that the hosted runtime renders and the current round is usable before
-returning the URL. Never create, open, attach, or return a local HTML file or
-local file path.
+that the hosted runtime renders, the current round is usable, and every image
+loads and renders, including every slide in a multi-image carousel. If the
+browser shows the runtime `Image unavailable` fallback or another render
+failure, replace or remove the image and publish again before returning the
+URL. The Python verifier validates the response; it does not replace this
+browser render check. Never create, open, attach, or return a local HTML file
+or local file path.
 
 ## Later rounds
 

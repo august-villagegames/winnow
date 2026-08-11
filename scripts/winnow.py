@@ -215,12 +215,10 @@ def _source_ref(value: Any, path: str, source_map: dict[str, dict[str, Any]]) ->
 
 def _validate_image(image: Any, path: str, sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
     image = _object(image, path, {"url", "alt", "sourceId"})
-    image_url = _https(_required(image, "url", path), f"{path}.url")
+    _https(_required(image, "url", path), f"{path}.url")
     _plain(_required(image, "alt", path), f"{path}.alt", max_length=200)
     source_id = _required(image, "sourceId", path)
     _source_ref(source_id, f"{path}.sourceId", sources)
-    if image_url.hostname != _source_host(sources[source_id]):
-        raise ValidationError([f"{path}.url: host must match cited source host"])
     return image
 
 

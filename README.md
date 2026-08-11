@@ -56,7 +56,8 @@ agent handoff and continuation package.
 
 The synthetic fixture uses reserved `example.com` image URLs to exercise the
 compiled media and browser fallback; run `verify-images` against a researched
-seed with real source-backed URLs before publishing.
+seed with real source-backed URLs before publishing. An image may be hosted on
+a separate CDN from its cited source page.
 
 Options may use the legacy singular `image` field or the preferred `images`
 array with up to five images. Every session is image-required by default;
@@ -74,6 +75,11 @@ decide the session image policy, choose 1–6 comparison factors, collect at
 least one direct source-backed image for every option unless the policy is
 explicitly `notApplicable`, validate, verify images, and publish Round 1
 through HereNow.
+The image `sourceId` identifies the cited source page; it does not require the
+direct image URL to share that page's hostname. Run `verify-images` before
+publishing, then open the hosted URL in a browser and confirm that every image
+loads and renders, including each image in a carousel. If a browser check
+fails, replace or remove the image and publish again before delivering the URL.
 The hosted URL is the only deliverable: never create, open, attach, or return
 a local HTML file or local file path. Treat
 shopping for products, shoes, clothing, travel, homes, people, styles, and
