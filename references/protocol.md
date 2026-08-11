@@ -13,7 +13,7 @@ session, round, source, option, and verdict evidence defined by
 {
   "protocol": "winnow.portable-session",
   "schemaVersion": 3,
-  "runtimeVersion": "3.0.0",
+  "runtimeVersion": "3.0.1",
   "session": {
     "id": "session-id",
     "title": "Durable couch under $2,000",
@@ -113,8 +113,11 @@ swipe, `ArrowUp`, or `S` means skip. Reactions are final and the completed
 round automatically becomes a summary.
 
 The local profile combines all reacted options across history and the current
-round. Numeric factors require three comparable reactions, both a like and a
-dislike, and normalized strength of at least 0.20. Boolean/category factors
-require a frequency difference of at least 0.25. Skips and free-text factors
-do not create patterns. The runtime sorts patterns by strength and shows at
-most three; otherwise it shows the contrast-needed message.
+round. Likes and dislikes are evaluated independently, and a profile pattern
+requires at least two supporting selections of the same polarity. Boolean and
+category patterns require a frequency difference of at least 0.25 when both
+polarities have evidence; numeric patterns use a counted average when only one
+polarity has enough evidence and retain a directional trend when both sides
+provide a strong contrast. Skips and free-text factors do not create patterns.
+The runtime sorts patterns by support count and strength, shows at most three,
+and otherwise shows the contrast-needed message.

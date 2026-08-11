@@ -4,7 +4,7 @@
   "parent": {
     "sessionId": "synthetic-sofa-session",
     "roundNumber": 1,
-    "seedHash": "12e026cf826d502d86801e640c91c91b785ac0bb324d7c3378aee5f884a3c4bf",
+    "seedHash": "92a6b90d495a2dd67aa0efabdab50593c0b7ebdee7d7c47e3a0ac13c6189793c",
     "url": "https://example.here.now/synthetic-sofa-round-1"
   },
   "session": {

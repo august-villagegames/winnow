@@ -8,7 +8,7 @@
   "properties": {
     "protocol": {"const": "winnow.portable-session"},
     "schemaVersion": {"const": 3},
-    "runtimeVersion": {"const": "3.0.0"},
+    "runtimeVersion": {"const": "3.0.1"},
     "session": {"$ref": "#/$defs/session"},
     "history": {"type": "array", "items": {"$ref": "#/$defs/completedRound"}},
     "round": {"$ref": "#/$defs/round"}

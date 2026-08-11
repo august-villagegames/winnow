@@ -32,14 +32,76 @@ test("profile scoring ignores skips and emits strong numeric and boolean pattern
   assert.ok(patterns.length >= 2);
   assert.ok(patterns.some((pattern) => pattern.factorId === "price" && pattern.text.includes("higher prices")));
   assert.ok(patterns.some((pattern) => pattern.factorId === "covers" && pattern.text.includes("include covers")));
+  assert.ok(patterns.some((pattern) => pattern.factorId === "covers" && pattern.supportCount === 3));
   assert.ok(patterns.every((pattern) => pattern.strength >= 0.2));
 });
 
-test("profile falls back when there is no contrast", () => {
+test("profile requires two supporting selections for either polarity", () => {
   const patterns = core.computeProfile(seed, {
     "sofa-1": "like",
-    "sofa-2": "like",
+    "sofa-2": "dislike",
+    "sofa-3": "skip",
+    "sofa-4": "skip",
+    "sofa-5": "skip",
+    "sofa-6": "skip",
+  });
+  assert.deepEqual(patterns, []);
+});
+
+test("a single like does not create a like pattern when dislikes are plentiful", () => {
+  const patterns = core.computeProfile(seed, {
+    "sofa-1": "like",
+    "sofa-2": "dislike",
+    "sofa-3": "dislike",
+    "sofa-4": "dislike",
+    "sofa-5": "dislike",
+    "sofa-6": "skip",
+  });
+  assert.ok(patterns.length > 0);
+  assert.ok(patterns.every((pattern) => pattern.polarity === "dislike"));
+  assert.ok(patterns.every((pattern) => !pattern.text.startsWith("1 liked")));
+});
+
+test("profile reports counted like and dislike patterns without requiring both sides", () => {
+  const patterns = core.computeProfile(seed, {
+    "sofa-1": "like",
+    "sofa-2": "dislike",
     "sofa-3": "like",
+    "sofa-4": "dislike",
+    "sofa-5": "skip",
+    "sofa-6": "skip",
+  });
+  assert.ok(patterns.some((pattern) => pattern.polarity === "like" && pattern.text === "2 liked options include covers" && pattern.supportCount === 2));
+  assert.ok(patterns.some((pattern) => pattern.polarity === "dislike" && pattern.text === "2 disliked options exclude covers" && pattern.supportCount === 2));
+});
+
+test("numeric one-sided patterns use a counted average", () => {
+  const patterns = core.computeProfile(seed, {
+    "sofa-1": "like",
+    "sofa-2": "skip",
+    "sofa-3": "like",
+    "sofa-4": "skip",
+    "sofa-5": "skip",
+    "sofa-6": "skip",
+  });
+  assert.ok(patterns.some((pattern) => pattern.factorId === "price" && pattern.polarity === "like" && pattern.text === "2 liked options average price of $1,870"));
+});
+
+test("profile counts matching evidence across rounds", () => {
+  const continued = core.clone(seed);
+  const completedRound = core.clone(seed.round);
+  completedRound.verdicts = seed.round.options.map((option) => ({ optionId: option.id, decision: option.id === "sofa-1" ? "like" : "skip" }));
+  continued.history = [completedRound];
+  continued.round.number = 2;
+  const patterns = core.computeProfile(continued, { "sofa-3": "like" });
+  assert.ok(patterns.some((pattern) => pattern.factorId === "covers" && pattern.polarity === "like" && pattern.supportCount === 2));
+});
+
+test("profile falls back when there is no repeated evidence", () => {
+  const patterns = core.computeProfile(seed, {
+    "sofa-1": "like",
+    "sofa-2": "skip",
+    "sofa-3": "skip",
     "sofa-4": "skip",
     "sofa-5": "skip",
     "sofa-6": "skip",
