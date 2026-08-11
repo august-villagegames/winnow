@@ -46,15 +46,24 @@ designs) require images.
 An option may provide either the legacy singular `image` object or the
 preferred `images` array. `images` contains 1–5 source-backed images; each
 image may use a different count across options, but a required-image session
-must include at least one for every option. Before a session is linked or
-published, every unique image URL must be fetched over HTTPS and verified as a
-successful, credential-free response with an allowed raster image content type
-(`image/png`, `image/jpeg`, `image/gif`, `image/webp`, or `image/avif`) whose
-bytes match the declared type and remain below the verifier's size limit.
+must include at least one for every option. An image's `sourceId` identifies the
+cited source page; the direct image URL may be hosted on a separate CDN and
+does not need to share the source page's hostname. Before a session is linked
+or published, every unique image URL must be fetched over HTTPS and verified as
+a successful, credential-free response with an allowed raster image content
+type (`image/png`, `image/jpeg`, `image/gif`, `image/webp`, or `image/avif`)
+whose bytes match the declared type and remain below the verifier's size limit.
 Redirects must remain HTTPS and the final response must not be HTML, JSON,
 empty, oversized, or a content-type mismatch. Run
 `python3 scripts/winnow.py verify-images seed.json` before publishing; publish
 also runs this gate automatically.
+
+The response verifier does not prove that a browser can render the image. After
+publishing, the agent must open the hosted Winnow URL in a browser and confirm
+that every image loads and renders, including every slide in a multi-image
+carousel. If an image shows the runtime fallback or otherwise fails to render,
+replace or remove that URL and publish a corrected session before delivering the
+hosted URL.
 
 ## History and continuation
 
