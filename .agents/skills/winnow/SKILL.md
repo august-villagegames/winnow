@@ -20,7 +20,13 @@ shareable session URL. Read `references/protocol.md` and
    duplicates, and allow each option to have a different count from 1–5.
 3. Choose 1–6 useful comparison factors and provide one correctly typed value
    for every factor on every option. Do not include hidden or future candidates.
-4. Validate every image URL before linking the session. This is a hard gate,
+4. Set `session.imagePolicy` to `{"mode":"required"}` by default. Use
+   `{"mode":"notApplicable","reason":"…"}` only for a clearly non-visual
+   decision; visual shopping and recommendation decisions require images. When
+   images are required, every option needs at least one direct, source-backed
+   image. Prefer the `images` array with 1–5 images per option (counts may
+   differ); the legacy singular `image` field is also supported.
+5. Validate every image URL before linking the session. This is a hard gate,
    not a best-effort check:
 
    ```sh
@@ -51,7 +57,9 @@ local file path.
 Validate the copied `winnow.continuation` package. Preserve the session and all
 completed rounds exactly, use the complete verdict history as preference
 evidence, research 4–6 entirely new options for `nextRoundNumber`, keep the
-primary factor unchanged and present, then run:
+primary factor unchanged and present, preserve the session image policy, and
+collect at least one verified image for every new option when images are
+required. Then run:
 
 ```sh
 python3 scripts/winnow.py inspect-continuation continuation.json
