@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import copy
 import importlib.util
 import json
@@ -17,6 +18,13 @@ SPEC.loader.exec_module(winnow)
 
 def fixture(name: str = "synthetic-seed.json") -> dict:
     return json.loads((ROOT / "fixtures" / name).read_text(encoding="utf-8"))
+
+
+class RepositoryChecks(unittest.TestCase):
+    def test_winnow_skill_copies_are_identical(self):
+        canonical = (ROOT / ".agents" / "skills" / "winnow" / "SKILL.md").read_bytes()
+        claude = (ROOT / ".claude" / "skills" / "winnow" / "SKILL.md").read_bytes()
+        self.assertEqual(claude, canonical, "Claude and agent Winnow skills must stay byte-for-byte identical")
 
 
 class ProtocolTests(unittest.TestCase):
@@ -145,11 +153,13 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_seed(seed)
 
-    def test_image_verification_rejects_non_image_bytes(self):
+    def test_cdn_hosted_image_is_allowed_and_verified(self):
         seed = fixture()
-        seed["round"]["options"][0]["images"] = [
-            {"url": "https://example.com/sofas/northline.png", "alt": "Northline front view", "sourceId": "source-sofa-1"},
-        ]
+        seed["round"]["options"][0]["image"]["url"] = "https://cdn.example.net/sofas/northline.png"
+        self.assertIs(winnow.validate_seed(seed), seed)
+        self.assertIn(winnow.seed_hash(seed), winnow.build_html(seed).decode("utf-8"))
+
+        image_bytes = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
 
         class Headers(dict):
             def get_content_type(self):
@@ -157,7 +167,10 @@ class ProtocolTests(unittest.TestCase):
 
         class Response:
             status = 200
-            headers = Headers({"Content-Type": "image/png", "Content-Length": "13"})
+            headers = Headers({"Content-Type": "image/png", "Content-Length": str(len(image_bytes))})
+
+            def __init__(self, url):
+                self.url = url
 
             def __enter__(self):
                 return self
@@ -166,7 +179,42 @@ class ProtocolTests(unittest.TestCase):
                 return False
 
             def geturl(self):
-                return "https://example.com/sofas/northline.png"
+                return self.url
+
+            def read(self, _limit):
+                return image_bytes
+
+        def open_image(request, *, timeout):
+            return Response(request.full_url)
+
+        with patch.object(winnow.urllib.request, "urlopen", side_effect=open_image) as fetch:
+            result = winnow.verify_image_urls(seed)
+
+        self.assertEqual(result["images"], 6)
+        self.assertEqual(result["uniqueImages"], 6)
+        self.assertEqual(fetch.call_count, 6)
+        self.assertTrue(any(item["url"] == "https://cdn.example.net/sofas/northline.png" for item in result["verified"]))
+
+    def test_image_verification_rejects_non_image_bytes(self):
+        seed = fixture()
+        seed["round"]["options"][0]["image"]["url"] = "https://cdn.example.net/sofas/northline.png"
+
+        class Headers(dict):
+            def get_content_type(self):
+                return self["Content-Type"].split(";", 1)[0]
+
+        class Response:
+            status = 200
+            headers = Headers({"Content-Type": "image/png", "Content-Length": "15"})
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def geturl(self):
+                return "https://cdn.example.net/sofas/northline.png"
 
             def read(self, _limit):
                 return b"<html>not image"

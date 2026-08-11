@@ -1,12 +1,9 @@
 ---
 name: winnow
-description: Research and publish a strict, self-contained anonymous Winnow v2 comparison session.
+description: Research and publish a strict, self-contained anonymous Winnow v3 comparison session.
 ---
 
 # Winnow portable skill
-
-The canonical release-pinned copy of this skill is:
-<https://raw.githubusercontent.com/august-villagegames/winnow/v0.1.0/.agents/skills/winnow/SKILL.md>
 
 Use this skill for an evidence-backed comparison with structured rounds and a
 shareable session URL. Read `references/protocol.md` and
@@ -25,13 +22,20 @@ input is needed or an issue or hurdle blocks progress.
    duplicates, and allow each option to have a different count from 1–5.
 3. Choose 1–6 useful comparison factors and provide one correctly typed value
    for every factor on every option. Do not include hidden or future candidates.
-4. Validate every image URL before linking the session. This is a hard gate,
-   not a best-effort check:
+4. Set `session.imagePolicy` to `{"mode":"required"}` by default. Use
+   `{"mode":"notApplicable","reason":"…"}` only for a clearly non-visual
+   decision; visual shopping and recommendation decisions require images. When
+   images are required, every option needs at least one direct, source-backed
+   image. Prefer the `images` array with 1–5 images per option (counts may
+   differ); the legacy singular `image` field is also supported.
+5. Validate every image URL before linking the session. This is a hard gate,
+   not a best-effort check. An image's `sourceId` cites the supporting source
+   page, but the direct image URL may be hosted on a separate CDN or another
+   domain:
 
    ```sh
    python3 scripts/winnow.py validate seed.json
    python3 scripts/winnow.py verify-images seed.json
-   python3 scripts/winnow.py build seed.json index.html
    python3 scripts/winnow.py publish seed.json
    ```
 
@@ -47,12 +51,23 @@ The runtime owns every structural, visual, interaction, ordering, formatting,
 and profile decision. Do not add agent-authored layout, CSS, badges, ranking
 weights, summaries, or controls to the seed.
 
+After every publish, open the returned HereNow URL in a browser and confirm
+that the hosted runtime renders, the current round is usable, and every image
+loads and renders, including every slide in a multi-image carousel. If the
+browser shows the runtime `Image unavailable` fallback or another render
+failure, replace or remove the image and publish again before returning the
+URL. The Python verifier validates the response; it does not replace this
+browser render check. Never create, open, attach, or return a local HTML file
+or local file path.
+
 ## Later rounds
 
 Validate the copied `winnow.continuation` package. Preserve the session and all
 completed rounds exactly, use the complete verdict history as preference
 evidence, research 4–6 entirely new options for `nextRoundNumber`, keep the
-primary factor unchanged and present, then run:
+primary factor unchanged and present, preserve the session image policy, and
+collect at least one verified image for every new option when images are
+required. Then run:
 
 ```sh
 python3 scripts/winnow.py inspect-continuation continuation.json
