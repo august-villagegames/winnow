@@ -11,6 +11,8 @@ The canonical release-pinned copy of this skill is:
 Use this skill for an evidence-backed comparison with structured rounds and a
 shareable session URL. Read `references/protocol.md` and
 `references/seed.schema.json` before authoring data.
+During Winnow planning, including between rounds, speak to the user only when
+input is needed or an issue or hurdle blocks progress.
 
 ## Initial round
 
