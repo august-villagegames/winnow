@@ -24,7 +24,9 @@ shareable session URL. Read `references/protocol.md` and
 3. Choose 1–6 useful comparison factors and provide one correctly typed value
    for every factor on every option. Do not include hidden or future candidates.
 4. Validate every image URL before linking the session. This is a hard gate,
-   not a best-effort check:
+   not a best-effort check. An image's `sourceId` cites the supporting source
+   page, but the direct image URL may be hosted on a separate CDN or another
+   domain:
 
    ```sh
    python3 scripts/winnow.py validate seed.json
@@ -40,6 +42,12 @@ shareable session URL. Read `references/protocol.md` and
    unsupported raster content types, empty/oversized responses, and bytes that
    do not match the declared PNG/JPEG/GIF/WebP/AVIF type. Do not link or
    publish if any image fails; replace the URL or remove that image first.
+   After publishing, open the hosted URL in a browser and check that every
+   image actually loads and renders, including every slide in a multi-image
+   carousel. If the browser shows the runtime `Image unavailable` fallback or
+   another render failure, replace or remove the image and publish again before
+   returning the URL. The Python verifier validates the response; it does not
+   replace this browser render check.
 
 The runtime owns every structural, visual, interaction, ordering, formatting,
 and profile decision. Do not add agent-authored layout, CSS, badges, ranking
