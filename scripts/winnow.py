@@ -21,7 +21,7 @@ from typing import Any, Iterable
 
 PROTOCOL = "winnow.portable-session"
 SCHEMA_VERSION = 3
-RUNTIME_VERSION = "3.0.0"
+RUNTIME_VERSION = "3.0.1"
 CONTINUATION_PROTOCOL = "winnow.continuation"
 PUBLISH_ENDPOINT = "https://here.now/api/v1/publish"
 CONTENT_TYPE = "text/html; charset=utf-8"

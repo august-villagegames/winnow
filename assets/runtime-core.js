@@ -7,8 +7,9 @@
   const PROTOCOL = "winnow.portable-session";
   const CONTINUATION_PROTOCOL = "winnow.continuation";
   const SCHEMA_VERSION = 3;
-  const RUNTIME_VERSION = "3.0.0";
+  const RUNTIME_VERSION = "3.0.1";
   const FALLBACK_PROFILE = "More contrast is needed before Winnow can identify a pattern.";
+  const MIN_PATTERN_SUPPORT = 2;
 
   function clone(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -117,64 +118,104 @@
     return lower;
   }
 
-  function patternForFactor(factor, rows) {
-    const reacted = rows.filter((row) => valueComparable(row.value) && (row.decision === "like" || row.decision === "dislike"));
-    const liked = reacted.filter((row) => row.decision === "like");
-    const disliked = reacted.filter((row) => row.decision === "dislike");
-    if (reacted.length < 3 || !liked.length || !disliked.length) return null;
+  function patternSupportPhrase(decision, count) {
+    return `${count} ${decision === "like" ? "liked" : "disliked"} options`;
+  }
 
-    if (factor.valueType === "number") {
-      const values = reacted.map((row) => row.value).filter((value) => typeof value === "number" && Number.isFinite(value));
-      if (values.length < 3) return null;
-      const min = Math.min(...values);
-      const max = Math.max(...values);
-      if (max === min) return null;
-      const likedMean = liked.reduce((total, row) => total + row.value, 0) / liked.length;
-      const dislikedMean = disliked.reduce((total, row) => total + row.value, 0) / disliked.length;
-      const difference = Math.abs(likedMean - dislikedMean) / (max - min);
-      if (difference < .20) return null;
-      const lower = likedMean < dislikedMean;
+  function patternTone(decision) {
+    return decision === "like" ? "positive" : "negative";
+  }
+
+  function patternIcon(decision) {
+    return decision === "like" ? "trending-up" : "trending-down";
+  }
+
+  function patternMeta(factor, decision, supportCount, strength) {
+    return {
+      factorId: factor.id,
+      polarity: decision,
+      supportCount,
+      strength,
+      tone: patternTone(decision),
+      icon: patternIcon(decision),
+    };
+  }
+
+  function categoryPattern(factor, decision, value, supportCount, strength) {
+    const prefix = patternSupportPhrase(decision, supportCount);
+    if (factor.valueType === "boolean") {
+      const action = Boolean(value) ? "include" : "exclude";
       return {
-        factorId: factor.id,
-        strength: difference,
-        direction: lower ? "lower" : "higher",
-        tone: lower ? "positive" : "negative",
-        icon: lower ? "trending-down" : "trending-up",
-        text: `Liked options trend toward ${lower ? "lower" : "higher"} ${labelNoun(factor.label)}`,
+        ...patternMeta(factor, decision, supportCount, strength),
+        direction: action,
+        text: `${prefix} ${action} ${String(factor.label).toLowerCase()}`,
       };
     }
+    return {
+      ...patternMeta(factor, decision, supportCount, strength),
+      direction: "include",
+      text: `${prefix} include ${String(value).toLowerCase()}`,
+    };
+  }
 
-    if (factor.valueType === "boolean" || factor.valueType === "category") {
-      const values = [...new Set(reacted.map((row) => JSON.stringify(row.value)))].map((value) => JSON.parse(value));
-      let best = null;
-      for (const value of values) {
-        const likesAtValue = liked.filter((row) => JSON.stringify(row.value) === JSON.stringify(value)).length / liked.length;
-        const dislikesAtValue = disliked.filter((row) => JSON.stringify(row.value) === JSON.stringify(value)).length / disliked.length;
-        const difference = Math.abs(likesAtValue - dislikesAtValue);
-        if (!best || difference > best.strength) best = { value, likesAtValue, strength: difference };
-      }
-      if (!best || best.strength < .25) return null;
-      if (factor.valueType === "boolean") {
-        const include = Boolean(best.value);
+  function numericPattern(factor, decision, values, oppositeValues) {
+    if (values.length < MIN_PATTERN_SUPPORT) return null;
+    const mean = values.reduce((total, value) => total + value, 0) / values.length;
+    const prefix = patternSupportPhrase(decision, values.length);
+    const allValues = [...values, ...oppositeValues];
+    const min = Math.min(...allValues);
+    const max = Math.max(...allValues);
+    if (oppositeValues.length >= MIN_PATTERN_SUPPORT && max !== min) {
+      const oppositeMean = oppositeValues.reduce((total, value) => total + value, 0) / oppositeValues.length;
+      const difference = Math.abs(mean - oppositeMean) / (max - min);
+      if (difference >= .20) {
+        const lower = mean < oppositeMean;
         return {
-          factorId: factor.id,
-          strength: best.strength,
-          direction: include ? "include" : "exclude",
-          tone: include ? "positive" : "negative",
-          icon: include ? "trending-up" : "trending-down",
-          text: `Liked options more often ${include ? "include" : "exclude"} ${String(factor.label).toLowerCase()}`,
+          ...patternMeta(factor, decision, values.length, difference),
+          direction: lower ? "lower" : "higher",
+          text: `${prefix} trend toward ${lower ? "lower" : "higher"} ${labelNoun(factor.label)}`,
         };
       }
-      return {
-        factorId: factor.id,
-        strength: best.strength,
-        direction: "include",
-        tone: "positive",
-        icon: "trending-up",
-        text: `Liked options more often include ${String(best.value).toLowerCase()}`,
-      };
     }
-    return null;
+    return {
+      ...patternMeta(factor, decision, values.length, 1),
+      direction: "average",
+      text: `${prefix} average ${String(factor.label).toLowerCase()} of ${formatValue(factor, mean)}`,
+    };
+  }
+
+  function patternForFactor(factor, rows) {
+    const reacted = rows.filter((row) => valueComparable(row.value) && (row.decision === "like" || row.decision === "dislike"));
+    const patterns = [];
+    const decisions = ["like", "dislike"];
+    for (const decision of decisions) {
+      const sameDecision = reacted.filter((row) => row.decision === decision);
+      if (factor.valueType === "number") {
+        const values = sameDecision.map((row) => row.value).filter((value) => typeof value === "number" && Number.isFinite(value));
+        const oppositeValues = reacted.filter((row) => row.decision !== decision).map((row) => row.value).filter((value) => typeof value === "number" && Number.isFinite(value));
+        const pattern = numericPattern(factor, decision, values, oppositeValues);
+        if (pattern) patterns.push(pattern);
+        continue;
+      }
+      if (factor.valueType !== "boolean" && factor.valueType !== "category") continue;
+      const groups = new Map();
+      for (const row of sameDecision) {
+        const key = JSON.stringify(row.value);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+      }
+      const opposite = reacted.filter((row) => row.decision !== decision);
+      const decisionCount = sameDecision.length;
+      const oppositeCount = opposite.length;
+      for (const [key, group] of groups.entries()) {
+        if (group.length < MIN_PATTERN_SUPPORT) continue;
+        const oppositeMatches = opposite.filter((row) => JSON.stringify(row.value) === key).length;
+        const difference = Math.abs(group.length / decisionCount - (oppositeCount ? oppositeMatches / oppositeCount : 0));
+        if (oppositeCount && difference < .25) continue;
+        patterns.push(categoryPattern(factor, decision, JSON.parse(key), group.length, difference || 1));
+      }
+    }
+    return patterns;
   }
 
   function computeProfile(seed, currentVerdicts) {
@@ -202,8 +243,8 @@
       byFactor.get(row.factorId).rows.push(row);
     }
     const order = new Map(currentFactorOrder.map((id, index) => [id, index]));
-    const patterns = [...byFactor.values()].map(({ factor, rows }) => patternForFactor(factor, rows)).filter(Boolean);
-    patterns.sort((left, right) => right.strength - left.strength || (order.get(left.factorId) ?? 999) - (order.get(right.factorId) ?? 999) || left.factorId.localeCompare(right.factorId));
+    const patterns = [...byFactor.values()].flatMap(({ factor, rows }) => patternForFactor(factor, rows));
+    patterns.sort((left, right) => right.supportCount - left.supportCount || right.strength - left.strength || (order.get(left.factorId) ?? 999) - (order.get(right.factorId) ?? 999) || left.factorId.localeCompare(right.factorId) || left.polarity.localeCompare(right.polarity));
     return patterns.slice(0, 3);
   }
 
