@@ -30,7 +30,7 @@ session, round, source, option, and verdict evidence defined by
 
 Every object is closed. Unknown keys, raw HTML, control characters, unsafe or
 credential-bearing URLs, missing sources, missing factor values, and undeclared
-factor values are rejected. A round has 1–6 factors, 4–6 options, and one
+factor values are rejected. A round has 1–6 factors, 4–10 options, and one
 typed value per factor on every option. A primary factor is present in every
 round and is rendered only in the large value slot. Reused factor IDs retain
 the same label, value type, and display definition. Option IDs, normalized
@@ -111,7 +111,7 @@ A successor must copy the latter exactly into its root `profileExclusions`;
 the runtime will record that successor value as the next parent snapshot. A
 successor must preserve the session byte-for-byte after canonical JSON
 normalization and copy `completedRounds` exactly into `history`; it may evolve
-only the non-primary factors and must research 4–6 entirely new options. It
+only the non-primary factors and must research 4–10 entirely new options. It
 must retain the session image policy and collect verified images for every new
 option when the policy is `required`.
 
