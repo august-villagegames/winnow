@@ -42,6 +42,10 @@ python3 scripts/winnow.py verify-images next-seed.json
 python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
 ```
 
+For a successor, `verify-images` checks the new current round. Images retained
+in `history` were verified when their original rounds were published and are
+not fetched again.
+
 Run the repository tests as well:
 
 ```sh

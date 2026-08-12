@@ -40,13 +40,15 @@ input is needed or an issue or hurdle blocks progress.
    python3 scripts/winnow.py publish seed.json
    ```
 
-   The verifier checks every unique image in the current and completed rounds
-   with an HTTPS GET (not just a HEAD request). It rejects DNS/TLS/network
-   failures, credential-bearing or non-HTTPS final redirects, non-2xx
-   responses, auth/error/HTML/JSON pages masquerading as images, missing or
-   unsupported raster content types, empty/oversized responses, and bytes that
-   do not match the declared PNG/JPEG/GIF/WebP/AVIF type. Do not link or
-   publish if any image fails; replace the URL or remove that image first.
+   The verifier checks every unique image in the current round with an HTTPS
+   GET (not just a HEAD request). Images carried in completed rounds were
+   verified when those rounds were published and are not fetched again during
+   successor verification. It rejects DNS/TLS/network failures,
+   credential-bearing or non-HTTPS final redirects, non-2xx responses,
+   auth/error/HTML/JSON pages masquerading as images, missing or unsupported
+   raster content types, empty/oversized responses, and bytes that do not match
+   the declared PNG/JPEG/GIF/WebP/AVIF type. Do not link or publish if any
+   current-round image fails; replace the URL or remove that image first.
 
 The runtime owns every structural, visual, interaction, ordering, formatting,
 and profile decision. Do not add agent-authored layout, CSS, badges, ranking

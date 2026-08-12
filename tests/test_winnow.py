@@ -257,6 +257,22 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(result["uniqueImages"], 4)
         self.assertEqual([call.args[0] for call in fetch.call_args_list], current_urls)
 
+    def test_image_verification_deduplicates_current_round_urls(self):
+        seed = fixture()
+        duplicate_url = seed["round"]["options"][0]["image"]["url"]
+        seed["round"]["options"][1]["image"]["url"] = duplicate_url
+
+        with patch.object(
+            winnow,
+            "_fetch_image",
+            return_value={"url": duplicate_url, "contentType": "image/png", "bytes": 1},
+        ) as fetch:
+            result = winnow.verify_image_urls(seed)
+
+        self.assertEqual(result["images"], 6)
+        self.assertEqual(result["uniqueImages"], 5)
+        self.assertEqual(fetch.call_count, 5)
+
     def test_image_verification_rejects_non_image_bytes(self):
         seed = fixture()
         seed["round"]["options"][0]["image"]["url"] = "https://cdn.example.net/sofas/northline.png"

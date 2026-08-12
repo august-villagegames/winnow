@@ -55,12 +55,14 @@ image may use a different count across options, but a required-image session
 must include at least one for every option. An image's `sourceId` identifies the
 cited source page; the direct image URL may be hosted on a separate CDN and
 does not need to share the source page's hostname. Before a session is linked
-or published, every unique image URL must be fetched over HTTPS and verified as
-a successful, credential-free response with an allowed raster image content
-type (`image/png`, `image/jpeg`, `image/gif`, `image/webp`, or `image/avif`)
-whose bytes match the declared type and remain below the verifier's size limit.
-Redirects must remain HTTPS and the final response must not be HTML, JSON,
-empty, oversized, or a content-type mismatch. Run
+or published, every unique image URL in the active round must be fetched over
+HTTPS and verified as a successful, credential-free response with an allowed
+raster image content type (`image/png`, `image/jpeg`, `image/gif`, `image/webp`,
+or `image/avif`) whose bytes match the declared type and remain below the
+verifier's size limit. Redirects must remain HTTPS and the final response must
+not be HTML, JSON, empty, oversized, or a content-type mismatch. Images carried
+in completed history rounds were verified when those rounds were published and
+are not refetched for a successor. Run
 `python3 scripts/winnow.py verify-images seed.json` before publishing; publish
 also runs this gate automatically.
 
