@@ -244,8 +244,12 @@
     return factors;
   }
 
-  function patternView(seed, record) {
-    const factor = profileFactorMap(seed)[record.factorId];
+  function isExclusiveProfileFactor(factor) {
+    return factor?.valueType === "number" || factor?.valueType === "boolean";
+  }
+
+  function patternView(factors, record) {
+    const factor = factors[record.factorId];
     if (!factor) return null;
     const prefix = patternSupportPhrase(record.polarity, record.supportCount);
     if (factor.valueType === "number") {
@@ -364,10 +368,19 @@
   function mergeProfilePatterns(seed, persistedPatterns, candidates, profileExclusions, includeExcluded) {
     const excluded = new Set(profileExclusions || []);
     const candidateByKey = new Map((candidates || []).map((pattern) => [pattern.key, pattern]));
+    const factors = profileFactorMap(seed);
     const active = [];
     const excludedViews = [];
     const seen = new Set();
     const seenExcluded = new Set();
+    const reservedExclusiveFactors = new Set();
+    const isExclusive = (pattern) => isExclusiveProfileFactor(factors[pattern.factorId]);
+    const reserveExclusiveFactor = (pattern) => {
+      if (!isExclusive(pattern)) return true;
+      if (reservedExclusiveFactors.has(pattern.factorId)) return false;
+      reservedExclusiveFactors.add(pattern.factorId);
+      return true;
+    };
     const addExcluded = (pattern) => {
       if (!seenExcluded.has(pattern.key)) {
         seenExcluded.add(pattern.key);
@@ -375,8 +388,9 @@
       }
     };
     for (const record of persistedPatterns || []) {
-      const pattern = candidateByKey.get(record.key) || patternView(seed, record);
+      const pattern = candidateByKey.get(record.key) || patternView(factors, record);
       if (!pattern) continue;
+      if (!reserveExclusiveFactor(pattern)) continue;
       if (excluded.has(record.key)) {
         if (includeExcluded) addExcluded(pattern);
         continue;
@@ -387,12 +401,19 @@
       }
     }
     for (const pattern of candidates || []) {
+      if (excluded.has(pattern.key) && isExclusive(pattern) && reserveExclusiveFactor(pattern)) {
+        if (includeExcluded) addExcluded(pattern);
+      }
+    }
+    for (const pattern of candidates || []) {
+      if (isExclusive(pattern) && reservedExclusiveFactors.has(pattern.factorId)) continue;
       if (excluded.has(pattern.key)) {
         if (includeExcluded) addExcluded(pattern);
         continue;
       }
       if (seen.has(pattern.key)) continue;
       if (active.length >= MAX_PROFILE_PATTERNS) continue;
+      reserveExclusiveFactor(pattern);
       seen.add(pattern.key);
       active.push(pattern);
     }
