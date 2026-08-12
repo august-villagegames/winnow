@@ -21,7 +21,7 @@ from typing import Any, Iterable
 
 PROTOCOL = "winnow.portable-session"
 SCHEMA_VERSION = 3
-RUNTIME_VERSION = "3.0.1"
+RUNTIME_VERSION = "3.0.2"
 CONTINUATION_PROTOCOL = "winnow.continuation"
 PUBLISH_ENDPOINT = "https://here.now/api/v1/publish"
 CONTENT_TYPE = "text/html; charset=utf-8"
@@ -144,6 +144,10 @@ def _string_array(value: Any, path: str, *, min_items: int = 0, max_items: int |
     result = [_plain(item, f"{path}[{index}]", max_length=max_length) for index, item in enumerate(items)]
     _unique(result, path, "values")
     return result
+
+
+def _validate_profile_exclusions(value: Any, path: str) -> list[str]:
+    return _string_array(value, path, max_length=500)
 
 
 def _validate_display(factor: dict[str, Any], path: str) -> dict[str, Any]:
@@ -407,7 +411,7 @@ def _validate_image_policy(rounds: list[dict[str, Any]], session: dict[str, Any]
 
 
 def validate_seed(seed: Any) -> dict[str, Any]:
-    root = _object(seed, "seed", {"protocol", "schemaVersion", "runtimeVersion", "session", "history", "round"})
+    root = _object(seed, "seed", {"protocol", "schemaVersion", "runtimeVersion", "session", "profileExclusions", "history", "round"})
     if root.get("protocol") != PROTOCOL:
         raise ValidationError(["seed.protocol: unsupported protocol"])
     if root.get("schemaVersion") != SCHEMA_VERSION:
@@ -415,6 +419,7 @@ def validate_seed(seed: Any) -> dict[str, Any]:
     if root.get("runtimeVersion") != RUNTIME_VERSION:
         raise ValidationError([f"seed.runtimeVersion: expected {RUNTIME_VERSION}"])
     session = _validate_session(_required(root, "session", "seed"))
+    _validate_profile_exclusions(_required(root, "profileExclusions", "seed"), "seed.profileExclusions")
     history_raw = _array(_required(root, "history", "seed"), "seed.history")
     history = [_validate_round(value, index + 1, True, f"seed.history[{index}]") for index, value in enumerate(history_raw)]
     current = _validate_round(_required(root, "round", "seed"), len(history) + 1, False, "seed.round")
@@ -424,7 +429,7 @@ def validate_seed(seed: Any) -> dict[str, Any]:
 
 
 def validate_continuation(value: Any) -> dict[str, Any]:
-    root = _object(value, "continuation", {"protocol", "schemaVersion", "parent", "session", "completedRounds", "nextRoundNumber"})
+    root = _object(value, "continuation", {"protocol", "schemaVersion", "parent", "session", "parentProfileExclusions", "profileExclusions", "completedRounds", "nextRoundNumber"})
     if root.get("protocol") != CONTINUATION_PROTOCOL:
         raise ValidationError(["continuation.protocol: unsupported protocol"])
     if root.get("schemaVersion") != SCHEMA_VERSION:
@@ -437,6 +442,8 @@ def validate_continuation(value: Any) -> dict[str, Any]:
         raise ValidationError(["continuation.parent.seedHash: expected a SHA-256 hash"])
     _https(_required(parent, "url", "continuation.parent"), "continuation.parent.url")
     session = _validate_session(_required(root, "session", "continuation"), "continuation.session")
+    parent_profile_exclusions = _validate_profile_exclusions(_required(root, "parentProfileExclusions", "continuation"), "continuation.parentProfileExclusions")
+    _validate_profile_exclusions(_required(root, "profileExclusions", "continuation"), "continuation.profileExclusions")
     completed_raw = _array(_required(root, "completedRounds", "continuation"), "continuation.completedRounds")
     if len(completed_raw) != parent["roundNumber"]:
         raise ValidationError(["continuation.completedRounds: does not match parent round number"])
@@ -449,7 +456,7 @@ def validate_continuation(value: Any) -> dict[str, Any]:
     _validate_round_lineage(completed, session)
     _validate_image_policy(completed, session)
     parent_round = {key: value for key, value in completed[-1].items() if key != "verdicts"}
-    parent_seed = {"protocol": PROTOCOL, "schemaVersion": SCHEMA_VERSION, "runtimeVersion": RUNTIME_VERSION, "session": session, "history": completed[:-1], "round": parent_round}
+    parent_seed = {"protocol": PROTOCOL, "schemaVersion": SCHEMA_VERSION, "runtimeVersion": RUNTIME_VERSION, "session": session, "profileExclusions": parent_profile_exclusions, "history": completed[:-1], "round": parent_round}
     if seed_hash(parent_seed) != parent["seedHash"]:
         raise ValidationError(["continuation.parent.seedHash: does not match the completed parent seed"])
     return root
@@ -462,6 +469,8 @@ def validate_successor(continuation: Any, next_seed: Any) -> dict[str, Any]:
         raise ValidationError(["successor.session: immutable session fields changed"])
     if canonical_json(next_seed["history"]) != canonical_json(continuation["completedRounds"]):
         raise ValidationError(["successor.history: completed rounds changed or are missing"])
+    if canonical_json(next_seed["profileExclusions"]) != canonical_json(continuation["profileExclusions"]):
+        raise ValidationError(["successor.profileExclusions: current profile exclusions changed or are missing"])
     if next_seed["round"]["number"] != continuation["nextRoundNumber"]:
         raise ValidationError(["successor.round.number: incorrect next round number"])
     return next_seed
