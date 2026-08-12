@@ -236,6 +236,27 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(fetch.call_count, 6)
         self.assertTrue(any(item["url"] == "https://cdn.example.net/sofas/northline.png" for item in result["verified"]))
 
+    def test_image_verification_only_fetches_current_round_images(self):
+        seed = fixture("synthetic-successor-seed.json")
+        historical_urls = []
+        for option_index, option in enumerate(seed["history"][0]["options"]):
+            url = f"https://history.example.invalid/sofas/{option_index}.png"
+            option["image"]["url"] = url
+            historical_urls.append(url)
+        current_urls = [option["image"]["url"] for option in seed["round"]["options"]]
+
+        def fetch_image(url, *, timeout):
+            if url in historical_urls:
+                raise ValueError("historical image should not be fetched")
+            return {"url": url, "contentType": "image/png", "bytes": 1}
+
+        with patch.object(winnow, "_fetch_image", side_effect=fetch_image) as fetch:
+            result = winnow.verify_image_urls(seed)
+
+        self.assertEqual(result["images"], 4)
+        self.assertEqual(result["uniqueImages"], 4)
+        self.assertEqual([call.args[0] for call in fetch.call_args_list], current_urls)
+
     def test_image_verification_rejects_non_image_bytes(self):
         seed = fixture()
         seed["round"]["options"][0]["image"]["url"] = "https://cdn.example.net/sofas/northline.png"

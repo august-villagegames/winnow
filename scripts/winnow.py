@@ -547,23 +547,19 @@ def build_html(seed: dict[str, Any], *, expires_at: str | None = None, template_
     return html.encode("utf-8")
 
 
-def _image_entries(seed: dict[str, Any]) -> Iterable[tuple[str, dict[str, Any]]]:
-    rounds = [*seed.get("history", []), seed["round"]]
-    for round_index, round_value in enumerate(rounds):
-        round_name = "history" if round_index < len(seed.get("history", [])) else "round"
-        actual_index = round_index if round_name == "history" else "current"
-        for option_index, option in enumerate(round_value["options"]):
-            if "images" in option:
-                images = option["images"]
-                image_path = f"seed.{round_name}{'' if actual_index == 'current' else f'[{actual_index}]'}.options[{option_index}].images"
-            elif "image" in option:
-                images = [option["image"]]
-                image_path = f"seed.{round_name}{'' if actual_index == 'current' else f'[{actual_index}]'}.options[{option_index}].image"
-            else:
-                continue
-            for image_index, image in enumerate(images):
-                suffix = f"[{image_index}]" if "images" in option else ""
-                yield f"{image_path}{suffix}", image
+def _current_image_entries(seed: dict[str, Any]) -> Iterable[tuple[str, dict[str, Any]]]:
+    for option_index, option in enumerate(seed["round"]["options"]):
+        if "images" in option:
+            images = option["images"]
+            image_path = f"seed.round.options[{option_index}].images"
+        elif "image" in option:
+            images = [option["image"]]
+            image_path = f"seed.round.options[{option_index}].image"
+        else:
+            continue
+        for image_index, image in enumerate(images):
+            suffix = f"[{image_index}]" if "images" in option else ""
+            yield f"{image_path}{suffix}", image
 
 
 def _image_type(body: bytes) -> str | None:
@@ -621,7 +617,7 @@ def _fetch_image(url: str, *, timeout: float = 15) -> dict[str, Any]:
 def verify_image_urls(seed: Any, *, timeout: float = 15) -> dict[str, Any]:
     seed = validate_seed(seed)
     references: dict[str, list[str]] = {}
-    for path, image in _image_entries(seed):
+    for path, image in _current_image_entries(seed):
         references.setdefault(image["url"], []).append(path)
     errors: list[str] = []
     verified: list[dict[str, Any]] = []
