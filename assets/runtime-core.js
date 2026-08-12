@@ -7,7 +7,7 @@
   const PROTOCOL = "winnow.portable-session";
   const CONTINUATION_PROTOCOL = "winnow.continuation";
   const SCHEMA_VERSION = 3;
-  const RUNTIME_VERSION = "3.0.1";
+  const RUNTIME_VERSION = "3.0.2";
   const FALLBACK_PROFILE = "More contrast is needed before Winnow can identify a pattern.";
   const MIN_PATTERN_SUPPORT = 2;
 
@@ -93,6 +93,7 @@
     if (seed.runtimeVersion !== RUNTIME_VERSION) errors.push("unsupported runtime version");
     if (!seed.session || typeof seed.session !== "object") errors.push("missing session");
     if (!seed.round || typeof seed.round !== "object") errors.push("missing round");
+    if (!validProfileExclusions(seed.profileExclusions)) errors.push("invalid profile exclusions");
     if (Array.isArray(seed.history) && seed.round && seed.round.number !== seed.history.length + 1) errors.push("round number is not contiguous");
     if (seed.session && seed.session.primaryFactorId) {
       const rounds = [...(seed.history || []), seed.round];
@@ -118,6 +119,20 @@
     return lower;
   }
 
+  function normalizePatternValue(value) {
+    if (typeof value === "string") return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+    if (typeof value === "boolean") return value;
+    return null;
+  }
+
+  function profilePatternKey(factorId, polarity, direction, value) {
+    return canonicalJson({ factorId, polarity, direction, value: normalizePatternValue(value) });
+  }
+
+  function validProfileExclusions(value) {
+    return Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0 && item.length <= 500) && new Set(value).size === value.length;
+  }
+
   function patternSupportPhrase(decision, count) {
     return `${count} ${decision === "like" ? "liked" : "disliked"} options`;
   }
@@ -130,12 +145,15 @@
     return decision === "like" ? "trending-up" : "trending-down";
   }
 
-  function patternMeta(factor, decision, supportCount, strength) {
+  function patternMeta(factor, decision, supportCount, strength, direction, value, compactLabel) {
     return {
       factorId: factor.id,
       polarity: decision,
       supportCount,
       strength,
+      direction,
+      key: profilePatternKey(factor.id, decision, direction, value),
+      compactLabel,
       tone: patternTone(decision),
       icon: patternIcon(decision),
     };
@@ -146,14 +164,12 @@
     if (factor.valueType === "boolean") {
       const action = Boolean(value) ? "include" : "exclude";
       return {
-        ...patternMeta(factor, decision, supportCount, strength),
-        direction: action,
+        ...patternMeta(factor, decision, supportCount, strength, action, Boolean(value), formatValue(factor, Boolean(value))),
         text: `${prefix} ${action} ${String(factor.label).toLowerCase()}`,
       };
     }
     return {
-      ...patternMeta(factor, decision, supportCount, strength),
-      direction: "include",
+      ...patternMeta(factor, decision, supportCount, strength, "include", value, formatValue(factor, value)),
       text: `${prefix} include ${String(value).toLowerCase()}`,
     };
   }
@@ -171,15 +187,13 @@
       if (difference >= .20) {
         const lower = mean < oppositeMean;
         return {
-          ...patternMeta(factor, decision, values.length, difference),
-          direction: lower ? "lower" : "higher",
+          ...patternMeta(factor, decision, values.length, difference, lower ? "lower" : "higher", null, `${lower ? "Lower" : "Higher"} ${labelNoun(factor.label)}`),
           text: `${prefix} trend toward ${lower ? "lower" : "higher"} ${labelNoun(factor.label)}`,
         };
       }
     }
     return {
-      ...patternMeta(factor, decision, values.length, 1),
-      direction: "average",
+      ...patternMeta(factor, decision, values.length, 1, "average", null, `Average ${String(factor.label).toLowerCase()} ${formatValue(factor, mean)}`),
       text: `${prefix} average ${String(factor.label).toLowerCase()} of ${formatValue(factor, mean)}`,
     };
   }
@@ -245,10 +259,15 @@
     const order = new Map(currentFactorOrder.map((id, index) => [id, index]));
     const patterns = [...byFactor.values()].flatMap(({ factor, rows }) => patternForFactor(factor, rows));
     patterns.sort((left, right) => right.supportCount - left.supportCount || right.strength - left.strength || (order.get(left.factorId) ?? 999) - (order.get(right.factorId) ?? 999) || left.factorId.localeCompare(right.factorId) || left.polarity.localeCompare(right.polarity));
-    return patterns.slice(0, 3);
+    return patterns.slice(0, 6);
   }
 
-  function buildContinuation(seed, currentVerdicts, seedHash, url) {
+  function activeProfilePatterns(patterns, profileExclusions) {
+    const excluded = new Set(profileExclusions || []);
+    return (patterns || []).filter((pattern) => !excluded.has(pattern.key));
+  }
+
+  function buildContinuation(seed, currentVerdicts, seedHash, url, profileExclusions) {
     assertRuntimeSeed(seed);
     const verdicts = currentVerdicts || {};
     const completedRound = clone(seed.round);
@@ -263,6 +282,8 @@
         url: url,
       },
       session: clone(seed.session),
+      parentProfileExclusions: clone(seed.profileExclusions),
+      profileExclusions: clone(profileExclusions === undefined ? seed.profileExclusions : profileExclusions),
       completedRounds: [...(seed.history || []).map(clone), completedRound],
       nextRoundNumber: seed.round.number + 1,
     };
@@ -284,10 +305,12 @@
     clone,
     normalizeUrl,
     formatValue,
+    profilePatternKey,
     validateRuntimeSeed,
     assertRuntimeSeed,
     currentDecisionMap,
     computeProfile,
+    activeProfilePatterns,
     buildContinuation,
     iconMarkup,
   };

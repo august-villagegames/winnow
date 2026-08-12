@@ -13,7 +13,7 @@ session, round, source, option, and verdict evidence defined by
 {
   "protocol": "winnow.portable-session",
   "schemaVersion": 3,
-  "runtimeVersion": "3.0.1",
+  "runtimeVersion": "3.0.2",
   "session": {
     "id": "session-id",
     "title": "Durable couch under $2,000",
@@ -22,6 +22,7 @@ session, round, source, option, and verdict evidence defined by
     "primaryFactorId": "price",
     "imagePolicy": {"mode": "required"}
   },
+  "profileExclusions": [],
   "history": [],
   "round": {"number": 1, "generatedAt": "…", "factors": [], "sources": [], "options": []}
 }
@@ -34,6 +35,11 @@ typed value per factor on every option. A primary factor is present in every
 round and is rendered only in the large value slot. Reused factor IDs retain
 the same label, value type, and display definition. Option IDs, normalized
 titles, and canonical option URLs cannot be reused anywhere in a session.
+
+`profileExclusions` is a runtime-owned array of opaque profile-pattern keys.
+It starts empty. The runtime uses it to remember insights the user has removed
+from future-round guidance; it does not change verdict history or whether the
+primary factor appears in later rounds.
 
 Every session declares an image policy. Use `{"mode":"required"}` by default:
 each option in every round must provide at least one source-backed image. Use
@@ -81,19 +87,30 @@ The runtime copies the immutable session and completed rounds into:
   "schemaVersion": 3,
   "parent": {"sessionId":"session-id","roundNumber":1,"seedHash":"sha256","url":"https://example.here.now/"},
   "session": {},
+  "parentProfileExclusions": [],
+  "profileExclusions": [],
   "completedRounds": [],
   "nextRoundNumber": 2
 }
 ```
 
-The clipboard handoff contains one fixed instruction plus the fenced package.
-It never renders JSON in the page and never includes profile prose, weights,
-hidden ranking fields, source-page instructions, or a claim token. A successor
-must preserve the session byte-for-byte after canonical JSON normalization and
-copy `completedRounds` exactly into `history`; it may evolve only the
-non-primary factors and must research 4–6 entirely new options. It must retain
-the session image policy and collect verified images for every new option when
-the policy is `required`.
+The clipboard handoff contains selected runtime-generated profile patterns
+before the fenced package. Those patterns are the only inferred preference
+guidance for the next round; the agent must not infer more preferences from
+verdict history or removed patterns. When no pattern is selected, the handoff
+explicitly prohibits preference inference from history. The package never
+renders in the page and never contains weights, hidden ranking fields,
+source-page instructions, or a claim token.
+
+`parentProfileExclusions` exactly records the exclusions embedded in the
+hashed parent seed. `profileExclusions` records the user’s latest selection.
+A successor must copy the latter exactly into its root `profileExclusions`;
+the runtime will record that successor value as the next parent snapshot. A
+successor must preserve the session byte-for-byte after canonical JSON
+normalization and copy `completedRounds` exactly into `history`; it may evolve
+only the non-primary factors and must research 4–6 entirely new options. It
+must retain the session image policy and collect verified images for every new
+option when the policy is `required`.
 
 Validate the workflow with:
 
@@ -115,11 +132,11 @@ continuation and are always published as a new anonymous HereNow URL.
 
 ## Runtime behavior
 
-The browser stores only current-page verdict events, keyed by seed hash, with
-IndexedDB first, localStorage fallback, then memory. It resumes the first
-unrated option after reload. Left/right reactions mean dislike/like; upward
-swipe, `ArrowUp`, or `S` means skip. Reactions are final and the completed
-round automatically becomes a summary.
+The browser stores current-page verdict events and profile exclusions, keyed by
+seed hash, with IndexedDB first, localStorage fallback, then memory. It resumes
+the first unrated option after reload. Left/right reactions mean dislike/like;
+upward swipe, `ArrowUp`, or `S` means skip. Reactions are final and the
+completed round automatically becomes a summary.
 
 The local profile combines all reacted options across history and the current
 round. Likes and dislikes are evaluated independently, and a profile pattern
@@ -128,5 +145,8 @@ category patterns require a frequency difference of at least 0.25 when both
 polarities have evidence; numeric patterns use a counted average when only one
 polarity has enough evidence and retain a directional trend when both sides
 provide a strong contrast. Skips and free-text factors do not create patterns.
-The runtime sorts patterns by support count and strength, shows at most three,
-and otherwise shows the contrast-needed message.
+The runtime sorts patterns by support count and strength, shows at most six,
+and otherwise shows the contrast-needed message. The summary renders each
+pattern as a compact pill with its support count. Removing a pill excludes only
+that same factor, polarity, direction, and semantic value from future guidance;
+it stays visibly restorable while the current evidence still supports it.

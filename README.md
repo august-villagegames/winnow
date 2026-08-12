@@ -3,9 +3,9 @@
 This directory is the isolated, zero-dependency Portable Winnow runtime. It
 compiles a strict v3 session seed into exactly one self-contained HTML page in
 memory, then publishes that page to an anonymous hosted Site. There is no
-supported local HTML artifact workflow. Only the current page's verdicts are
-persisted in the browser; later rounds are researched and published by an
-agent from a copied continuation package.
+supported local HTML artifact workflow. Only the current page's verdicts and
+profile selections are persisted in the browser; later rounds are researched
+and published by an agent from a copied continuation package.
 
 The canonical standalone repository is
 <https://github.com/august-villagegames/winnow>. This content is also kept at
@@ -62,9 +62,10 @@ a separate CDN from its cited source page.
 Options may use the legacy singular `image` field or the preferred `images`
 array with up to five images. Every session is image-required by default;
 declare `session.imagePolicy.mode` as `notApplicable` with a reason only for a
-clearly non-visual decision. Multiple images appear as an accessible carousel.
-If a verified image later fails in the browser, the runtime keeps the media
-slot and announces `Image unavailable` instead of silently removing it.
+clearly non-visual decision. Initialize the required root
+`profileExclusions` field to `[]`. Multiple images appear as an accessible
+carousel. If a verified image later fails in the browser, the runtime keeps the
+media slot and announces `Image unavailable` instead of silently removing it.
 
 ## Agent workflow
 
@@ -86,11 +87,13 @@ shopping for products, shoes, clothing, travel, homes, people, styles, and
 designs as visual decisions that require images.
 
 For a continuation, validate the package, preserve the session and all
-completed rounds exactly, use the full verdict history as evidence, research
-4–6 new options, preserve the session image policy, add verified images for
-every new option when required, validate the successor, and publish it as a new
-anonymous HereNow URL. Return the hosted URL, never a generated local HTML
-artifact:
+completed rounds exactly, use only the selected profile patterns in the copied
+handoff as preference guidance, and never infer further preferences from
+verdict history. Copy `continuation.profileExclusions` exactly into the
+successor seed’s `profileExclusions`, research 4–6 new options, preserve the
+session image policy, add verified images for every new option when required,
+validate the successor, and publish it as a new anonymous HereNow URL. Return
+the hosted URL, never a generated local HTML artifact:
 
 ```sh
 python3 scripts/winnow.py publish next-seed.json --continuation continuation.json

@@ -40,6 +40,47 @@ class ProtocolTests(unittest.TestCase):
         self.assertIs(winnow.validate_continuation(continuation), continuation)
         self.assertIs(winnow.validate_successor(continuation, successor), successor)
 
+    def test_profile_exclusions_are_required_and_propagate_to_successors(self):
+        seed = fixture()
+        seed.pop("profileExclusions")
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+        seed = fixture()
+        seed["runtimeVersion"] = "3.0.1"
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+        for field in ["parentProfileExclusions", "profileExclusions"]:
+            with self.subTest(field=field):
+                continuation = fixture("synthetic-continuation.json")
+                continuation.pop(field)
+                with self.assertRaises(winnow.ValidationError):
+                    winnow.validate_continuation(continuation)
+
+        for invalid in ["not-an-array", [""], ["same", "same"], ["x" * 501]]:
+            with self.subTest(invalid=invalid):
+                seed = fixture()
+                seed["profileExclusions"] = invalid
+                with self.assertRaises(winnow.ValidationError):
+                    winnow.validate_seed(seed)
+
+        continuation = fixture("synthetic-continuation.json")
+        successor = fixture("synthetic-successor-seed.json")
+        exclusion = '{"direction":"include","factorId":"covers","polarity":"like","value":true}'
+        continuation["profileExclusions"] = [exclusion]
+        successor["profileExclusions"] = [exclusion]
+        self.assertIs(winnow.validate_successor(continuation, successor), successor)
+
+        successor["profileExclusions"] = []
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_successor(continuation, successor)
+
+        continuation = fixture("synthetic-continuation.json")
+        continuation["parentProfileExclusions"] = [exclusion]
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_continuation(continuation)
+
     def test_unknown_keys_are_rejected_at_every_protocol_level(self):
         cases = [
             (lambda value: value.update({"extra": True})),
@@ -313,6 +354,9 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn("Generate a better round", html)
         self.assertIn("Image unavailable", html)
         self.assertIn("imagePolicy", html)
+        self.assertIn("profileExclusions", html)
+        self.assertIn("data-profile-toggle", html)
+        self.assertIn("rotate-ccw", html)
         self.assertIn("connect-src 'none'", html)
         self.assertNotIn("fetch(", html)
 
