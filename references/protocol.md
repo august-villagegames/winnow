@@ -62,16 +62,12 @@ or `image/avif`) whose bytes match the declared type and remain below the
 verifier's size limit. Redirects must remain HTTPS and the final response must
 not be HTML, JSON, empty, oversized, or a content-type mismatch. Images carried
 in completed history rounds were verified when those rounds were published and
-are not refetched for a successor. Run
-`python3 scripts/winnow.py verify-images seed.json` before publishing; publish
-also runs this gate automatically.
+are not refetched for a successor. `publish` runs this gate automatically;
+the separate `verify-images` command remains available as a diagnostic and
+may reuse a fresh verification receipt.
 
-The response verifier does not prove that a browser can render the image. After
-publishing, the agent must open the hosted Winnow URL in a browser and confirm
-that every image loads and renders, including every slide in a multi-image
-carousel. If an image shows the runtime fallback or otherwise fails to render,
-replace or remove that URL and publish a corrected session before delivering the
-hosted URL.
+The response verifier checks the image response bytes and does not add runtime
+network calls or local media artifacts.
 
 ## History and continuation
 

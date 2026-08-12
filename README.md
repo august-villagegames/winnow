@@ -14,15 +14,16 @@ The commands below assume this directory is the current working directory.
 
 ## Local checks
 
-Run the initial-round commands in this order. `publish` is the only delivery
-workflow; it compiles the page in memory, uploads it to HereNow, and verifies
-the live hosted page.
+The normal initial-round workflow is a single `publish` command. It compiles
+the page in memory, uploads it to HereNow, and verifies the live hosted page.
 
 ```sh
-python3 scripts/winnow.py validate seed.json
-python3 scripts/winnow.py verify-images seed.json
 python3 scripts/winnow.py publish seed.json
 ```
+
+`validate` and `verify-images` remain available as optional diagnostics;
+`publish` validates the seed and verifies the current round’s images, reusing a
+fresh verification receipt when one exists.
 
 For the included synthetic fixture, the schema-only check is:
 
@@ -31,20 +32,19 @@ python3 scripts/winnow.py validate fixtures/synthetic-seed.json
 ```
 
 Its reserved `example.com` image URLs are intentionally not fetchable, so use
-a researched seed with real source-backed image URLs for `verify-images` and
-`publish`. For a continuation, validate the copied package and successor
-before publishing a new anonymous URL:
+a researched seed with real source-backed image URLs for `publish`. For a
+continuation, validate the copied package and successor before publishing a
+new anonymous URL:
 
 ```sh
 python3 scripts/winnow.py inspect-continuation fixtures/synthetic-continuation.json
 python3 scripts/winnow.py validate-successor fixtures/synthetic-continuation.json fixtures/synthetic-successor-seed.json
-python3 scripts/winnow.py verify-images next-seed.json
 python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
 ```
 
-For a successor, `verify-images` checks the new current round. Images retained
-in `history` were verified when their original rounds were published and are
-not fetched again.
+For a successor, `publish` checks the new current round. Images retained in
+`history` were verified when their original rounds were published and are not
+fetched again.
 
 Run the repository tests as well:
 
@@ -59,9 +59,9 @@ URL to see the summary, then use `Generate a better round →` to copy the fixed
 agent handoff and continuation package.
 
 The synthetic fixture uses reserved `example.com` image URLs to exercise the
-compiled media and browser fallback; run `verify-images` against a researched
-seed with real source-backed URLs before publishing. An image may be hosted on
-a separate CDN from its cited source page.
+compiled media and browser fallback; use `verify-images` as an optional
+diagnostic against a researched seed with real source-backed URLs. An image
+may be hosted on a separate CDN from its cited source page.
 
 Options may use the legacy singular `image` field or the preferred `images`
 array with up to five images. Every session is image-required by default;
@@ -78,13 +78,11 @@ For an initial request, read `references/protocol.md` and
 broadly in private, select only 4–6 representative source-supported options,
 decide the session image policy, choose 1–6 comparison factors, collect at
 least one direct source-backed image for every option unless the policy is
-explicitly `notApplicable`, validate, verify images, and publish Round 1
+explicitly `notApplicable`, validate, and publish Round 1
 through HereNow.
 The image `sourceId` identifies the cited source page; it does not require the
-direct image URL to share that page's hostname. Run `verify-images` before
-publishing, then open the hosted URL in a browser and confirm that every image
-loads and renders, including each image in a carousel. If a browser check
-fails, replace or remove the image and publish again before delivering the URL.
+direct image URL to share that page's hostname. `publish` performs the image
+verification automatically.
 The hosted URL is the only deliverable: never create, open, attach, or return
 a local HTML file or local file path. Treat
 shopping for products, shoes, clothing, travel, homes, people, styles, and

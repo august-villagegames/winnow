@@ -35,15 +35,15 @@ input is needed or an issue or hurdle blocks progress.
    domain:
 
    ```sh
-   python3 scripts/winnow.py validate seed.json
-   python3 scripts/winnow.py verify-images seed.json
    python3 scripts/winnow.py publish seed.json
    ```
 
-   The verifier checks every unique image in the current round with an HTTPS
-   GET (not just a HEAD request). Images carried in completed rounds were
-   verified when those rounds were published and are not fetched again during
-   successor verification. It rejects DNS/TLS/network failures,
+   `publish` validates the seed and checks every unique image in the current
+   round with an HTTPS GET (not just a HEAD request). `verify-images` remains a
+   supported diagnostic command and may reuse a fresh verification receipt.
+   Images carried in completed rounds were verified when those rounds were
+   published and are not fetched again during successor verification. The
+   verifier rejects DNS/TLS/network failures,
    credential-bearing or non-HTTPS final redirects, non-2xx responses,
    auth/error/HTML/JSON pages masquerading as images, missing or unsupported
    raster content types, empty/oversized responses, and bytes that do not match
@@ -54,14 +54,7 @@ The runtime owns every structural, visual, interaction, ordering, formatting,
 and profile decision. Do not add agent-authored layout, CSS, badges, ranking
 weights, summaries, or controls to the seed.
 
-After every publish, open the returned HereNow URL in a browser and confirm
-that the hosted runtime renders, the current round is usable, and every image
-loads and renders, including every slide in a multi-image carousel. If the
-browser shows the runtime `Image unavailable` fallback or another render
-failure, replace or remove the image and publish again before returning the
-URL. The Python verifier validates the response; it does not replace this
-browser render check. Never create, open, attach, or return a local HTML file
-or local file path.
+Never create, open, attach, or return a local HTML file or local file path.
 
 ## Later rounds
 
@@ -76,9 +69,6 @@ policy, and collect at least one verified image for every new option when
 images are required. Then run:
 
 ```sh
-python3 scripts/winnow.py inspect-continuation continuation.json
-python3 scripts/winnow.py validate-successor continuation.json next-seed.json
-python3 scripts/winnow.py verify-images next-seed.json
 python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
 ```
 

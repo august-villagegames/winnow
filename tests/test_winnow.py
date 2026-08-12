@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import base64
 import copy
+import datetime as dt
+import hashlib
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -18,6 +21,16 @@ SPEC.loader.exec_module(winnow)
 
 def fixture(name: str = "synthetic-seed.json") -> dict:
     return json.loads((ROOT / "fixtures" / name).read_text(encoding="utf-8"))
+
+
+def verified_image(url: str) -> dict:
+    return {
+        "requestedUrl": url,
+        "url": url,
+        "contentType": "image/png",
+        "bytes": 1,
+        "sha256": "a" * 64,
+    }
 
 
 class RepositoryChecks(unittest.TestCase):
@@ -234,7 +247,9 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(result["images"], 6)
         self.assertEqual(result["uniqueImages"], 6)
         self.assertEqual(fetch.call_count, 6)
-        self.assertTrue(any(item["url"] == "https://cdn.example.net/sofas/northline.png" for item in result["verified"]))
+        item = next(item for item in result["verified"] if item["url"] == "https://cdn.example.net/sofas/northline.png")
+        self.assertEqual(item["requestedUrl"], "https://cdn.example.net/sofas/northline.png")
+        self.assertEqual(item["sha256"], hashlib.sha256(image_bytes).hexdigest())
 
     def test_image_verification_only_fetches_current_round_images(self):
         seed = fixture("synthetic-successor-seed.json")
@@ -255,7 +270,8 @@ class ProtocolTests(unittest.TestCase):
 
         self.assertEqual(result["images"], 4)
         self.assertEqual(result["uniqueImages"], 4)
-        self.assertEqual([call.args[0] for call in fetch.call_args_list], current_urls)
+        self.assertEqual([item["requestedUrl"] for item in result["verified"]], current_urls)
+        self.assertEqual({call.args[0] for call in fetch.call_args_list}, set(current_urls))
 
     def test_image_verification_deduplicates_current_round_urls(self):
         seed = fixture()
@@ -272,6 +288,127 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(result["images"], 6)
         self.assertEqual(result["uniqueImages"], 5)
         self.assertEqual(fetch.call_count, 5)
+
+    def test_image_verification_receipt_cache_hit_and_expiration(self):
+        seed = fixture()
+        now = dt.datetime(2026, 8, 11, 12, 0, tzinfo=dt.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_root = Path(directory)
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)) as fetch:
+                first = winnow.verify_image_urls(seed, receipt_root=receipt_root, now=now)
+            self.assertEqual(first["scope"], "currentRound")
+            self.assertFalse(first["cacheHit"])
+            self.assertTrue(first["receiptStored"])
+            self.assertEqual(first["receiptExpiresAt"], "2026-08-12T12:00:00.000Z")
+            self.assertEqual(fetch.call_count, 6)
+
+            with patch.object(winnow, "_fetch_image", side_effect=AssertionError("cache hit should not fetch")) as fetch:
+                second = winnow.verify_image_urls(seed, receipt_root=receipt_root, now=now + dt.timedelta(hours=1))
+            self.assertTrue(second["cacheHit"])
+            self.assertFalse(second["receiptStored"])
+            self.assertEqual(second["receiptExpiresAt"], first["receiptExpiresAt"])
+            fetch.assert_not_called()
+
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)) as fetch:
+                expired = winnow.verify_image_urls(
+                    seed,
+                    receipt_root=receipt_root,
+                    now=now + winnow.VERIFICATION_RECEIPT_TTL,
+                )
+            self.assertFalse(expired["cacheHit"])
+            self.assertTrue(expired["receiptStored"])
+            self.assertEqual(fetch.call_count, 6)
+
+    def test_image_verification_receipt_manifest_changes_are_cache_misses(self):
+        seed = fixture()
+        now = dt.datetime(2026, 8, 11, 12, 0, tzinfo=dt.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_root = Path(directory)
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)):
+                winnow.verify_image_urls(seed, receipt_root=receipt_root, now=now)
+
+            changed = copy.deepcopy(seed)
+            changed["round"]["options"][0]["image"]["url"] = "https://example.com/changed.png"
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)) as fetch:
+                result = winnow.verify_image_urls(changed, receipt_root=receipt_root, now=now + dt.timedelta(hours=1))
+            self.assertFalse(result["cacheHit"])
+            self.assertEqual(fetch.call_count, 6)
+
+            added = copy.deepcopy(seed)
+            original = added["round"]["options"][0].pop("image")
+            added["round"]["options"][0]["images"] = [
+                original,
+                {"url": "https://example.com/extra.png", "alt": "Northline detail", "sourceId": "source-sofa-1"},
+            ]
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)) as fetch:
+                result = winnow.verify_image_urls(added, receipt_root=receipt_root, now=now + dt.timedelta(hours=2))
+            self.assertFalse(result["cacheHit"])
+            self.assertEqual(result["images"], 7)
+            self.assertEqual(fetch.call_count, 7)
+
+            reordered = copy.deepcopy(added)
+            reordered["round"]["options"][0]["images"].reverse()
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)) as fetch:
+                result = winnow.verify_image_urls(reordered, receipt_root=receipt_root, now=now + dt.timedelta(hours=3))
+            self.assertFalse(result["cacheHit"])
+            self.assertEqual(fetch.call_count, 7)
+
+    def test_image_verification_rejects_mismatched_receipt_metadata(self):
+        seed = fixture()
+        now = dt.datetime(2026, 8, 11, 12, 0, tzinfo=dt.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_root = Path(directory)
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)):
+                winnow.verify_image_urls(seed, receipt_root=receipt_root, now=now)
+            path = winnow._receipt_path(seed, receipt_root)
+            for field, value in [("sessionId", "other-session"), ("roundNumber", 2), ("version", 999)]:
+                receipt = json.loads(path.read_text(encoding="utf-8"))
+                receipt[field] = value
+                path.write_text(json.dumps(receipt), encoding="utf-8")
+                with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)) as fetch:
+                    result = winnow.verify_image_urls(seed, receipt_root=receipt_root, now=now + dt.timedelta(hours=1))
+                self.assertFalse(result["cacheHit"])
+                self.assertEqual(fetch.call_count, 6)
+
+    def test_not_applicable_image_verification_does_not_fetch_or_store(self):
+        seed = fixture()
+        seed["session"]["imagePolicy"] = {"mode": "notApplicable", "reason": "Text-only test fixture."}
+        for option in seed["round"]["options"]:
+            option.pop("image")
+        with tempfile.TemporaryDirectory() as directory, patch.object(winnow, "_fetch_image") as fetch:
+            result = winnow.verify_image_urls(seed, receipt_root=Path(directory))
+        self.assertFalse(result["cacheHit"])
+        self.assertFalse(result["receiptStored"])
+        self.assertIsNone(result["receiptExpiresAt"])
+        fetch.assert_not_called()
+
+    def test_injected_receipt_time_must_be_timezone_aware(self):
+        with self.assertRaises(ValueError):
+            winnow.verify_image_urls(fixture(), now=dt.datetime(2026, 8, 11, 12, 0))
+
+    def test_receipt_write_failure_falls_back_to_fresh_verification(self):
+        seed = fixture()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)
+        ) as fetch, patch.object(winnow, "_write_receipt", side_effect=OSError("receipt unavailable")):
+            result = winnow.verify_image_urls(seed, receipt_root=Path(directory))
+        self.assertFalse(result["cacheHit"])
+        self.assertFalse(result["receiptStored"])
+        self.assertIsNone(result["receiptExpiresAt"])
+        self.assertEqual(fetch.call_count, 6)
+
+    def test_malformed_receipts_are_pruned_without_blocking_verification(self):
+        seed = fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_root = Path(directory)
+            malformed = receipt_root / "orphan" / "round-1.json"
+            malformed.parent.mkdir(parents=True)
+            malformed.write_text("not-json", encoding="utf-8")
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)) as fetch:
+                result = winnow.verify_image_urls(seed, receipt_root=receipt_root)
+            self.assertTrue(result["receiptStored"])
+            self.assertEqual(fetch.call_count, 6)
+            self.assertFalse(malformed.exists())
 
     def test_image_verification_rejects_non_image_bytes(self):
         seed = fixture()
@@ -428,6 +565,7 @@ class PublisherTests(unittest.TestCase):
 
     def test_publish_is_anonymous_and_returns_round_number_without_claim_token(self):
         base_url = "https://mock.here.now"
+        seed = fixture()
         requests: list[tuple[str, str, dict | None, dict | None]] = []
         uploaded: list[bytes] = []
 
@@ -455,11 +593,12 @@ class PublisherTests(unittest.TestCase):
         def fake_fetch(url, expected_session_id, *, allow_http=False, timeout=30):
             requests.append(("GET", url, None, None))
 
-        with patch.object(winnow, "verify_image_urls", return_value={"images": 6, "uniqueImages": 6, "verified": []}), patch.object(winnow, "_http_json", side_effect=fake_json), patch.object(winnow, "_http_upload", side_effect=fake_upload), patch.object(winnow, "_fetch_live", side_effect=fake_fetch):
-            result = winnow.publish(fixture(), endpoint=base_url + "/api/v1/publish")
+        with patch.object(winnow, "verify_image_urls", return_value={"images": 6, "uniqueImages": 6, "verified": []}), patch.object(winnow, "_http_json", side_effect=fake_json), patch.object(winnow, "_http_upload", side_effect=fake_upload), patch.object(winnow, "_fetch_live", side_effect=fake_fetch), patch.object(winnow, "_delete_receipt") as delete_receipt:
+            result = winnow.publish(seed, endpoint=base_url + "/api/v1/publish")
 
         self.assertEqual(result["siteUrl"], base_url + "/site")
         self.assertEqual(result["roundNumber"], 1)
+        delete_receipt.assert_called_once_with(seed)
         self.assertNotIn("claimToken", json.dumps(result))
         self.assertIn(b"content=\"2026-08-09T12:00:00.000Z\"", uploaded[0])
         self.assertEqual([method for method, _url, _body, _headers in requests], ["POST", "PUT", "POST", "GET"])
