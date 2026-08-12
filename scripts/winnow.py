@@ -1002,7 +1002,15 @@ def _fetch_live(url: str, expected_session_id: str, *, allow_http: bool = False,
         raise PublishError("live Site verification failed: session id mismatch")
 
 
-def publish(seed: dict[str, Any], *, continuation: dict[str, Any] | None = None, endpoint: str = PUBLISH_ENDPOINT, allow_http_test: bool = False) -> dict[str, Any]:
+def publish(
+    seed: dict[str, Any],
+    *,
+    continuation: dict[str, Any] | None = None,
+    endpoint: str = PUBLISH_ENDPOINT,
+    allow_http_test: bool = False,
+    receipt_root: Path | None = None,
+    now: dt.datetime | None = None,
+) -> dict[str, Any]:
     validate_seed(seed)
     if seed["history"]:
         if continuation is None:
@@ -1010,7 +1018,7 @@ def publish(seed: dict[str, Any], *, continuation: dict[str, Any] | None = None,
         validate_successor(continuation, seed)
     elif continuation is not None:
         validate_successor(continuation, seed)
-    verify_image_urls(seed)
+    verify_image_urls(seed, receipt_root=receipt_root, now=now)
     html = build_html(seed)
     status, created = _http_json(endpoint, "POST", {"files": [{"path": "index.html", "size": len(html), "contentType": CONTENT_TYPE}]}, headers={"X-HereNow-Client": "winnow-portable/2"})
     if status < 200 or status >= 300 or created.get("anonymous") is not True:
@@ -1034,7 +1042,10 @@ def publish(seed: dict[str, Any], *, continuation: dict[str, Any] | None = None,
     if not isinstance(site_url, str):
         raise PublishError("here.now create response is missing siteUrl")
     _fetch_live(site_url, seed["session"]["id"], allow_http=allow_http_test)
-    _delete_receipt(seed)
+    try:
+        _delete_receipt(seed, receipt_root=receipt_root)
+    except OSError:
+        pass
     return {"siteUrl": site_url, "expiresAt": expires_at, "sessionId": seed["session"]["id"], "seedHash": seed_hash(seed), "roundNumber": seed["round"]["number"]}
 
 

@@ -556,12 +556,154 @@ class ProtocolTests(unittest.TestCase):
 
 
 class PublisherTests(unittest.TestCase):
+    def _publish_with_fake_site(
+        self,
+        seed: dict,
+        *,
+        receipt_root: Path,
+        now: dt.datetime,
+        create_error: Exception | None = None,
+        upload_error: Exception | None = None,
+        finalize_error: Exception | None = None,
+        live_error: Exception | None = None,
+    ) -> dict:
+        base_url = "https://mock.here.now"
+
+        def fake_json(url, method, body=None, *, headers=None, timeout=30):
+            if method == "POST" and url == base_url + "/api/v1/publish":
+                if create_error is not None:
+                    raise create_error
+                return 200, {
+                    "siteUrl": base_url + "/site",
+                    "expiresAt": "2026-08-12T12:00:00.000Z",
+                    "anonymous": True,
+                    "upload": {
+                        "versionId": "version-1",
+                        "uploads": [{"path": "index.html", "url": base_url + "/upload", "headers": {}}],
+                        "finalizeUrl": base_url + "/finalize",
+                    },
+                }
+            if method == "POST" and url == base_url + "/finalize" and finalize_error is not None:
+                raise finalize_error
+            return 200, {"success": True}
+
+        def fake_upload(url, html, headers=None, *, timeout=30):
+            if upload_error is not None:
+                raise upload_error
+
+        def fake_live(url, expected_session_id, *, allow_http=False, timeout=30):
+            if live_error is not None:
+                raise live_error
+
+        with patch.object(winnow, "_http_json", side_effect=fake_json), patch.object(winnow, "_http_upload", side_effect=fake_upload), patch.object(winnow, "_fetch_live", side_effect=fake_live):
+            return winnow.publish(
+                seed,
+                endpoint=base_url + "/api/v1/publish",
+                receipt_root=receipt_root,
+                now=now,
+            )
+
     def test_publish_image_verification_is_a_hard_gate(self):
         with patch.object(winnow, "verify_image_urls", side_effect=winnow.ValidationError(["image verification failed"])) as verify, patch.object(winnow, "_http_json") as request:
             with self.assertRaises(winnow.ValidationError):
                 winnow.publish(fixture(), endpoint="https://mock.here.now/api/v1/publish")
-        verify.assert_called_once()
+        verify.assert_called_once_with(fixture(), receipt_root=None, now=None)
         request.assert_not_called()
+
+    def test_diagnostic_verification_is_reused_by_publish_and_success_deletes_receipt(self):
+        seed = fixture()
+        now = dt.datetime(2026, 8, 11, 12, 0, tzinfo=dt.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_root = Path(directory)
+            receipt_path = winnow._receipt_path(seed, receipt_root)
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)) as fetch:
+                winnow.verify_image_urls(seed, receipt_root=receipt_root, now=now)
+                result = self._publish_with_fake_site(seed, receipt_root=receipt_root, now=now + dt.timedelta(hours=1))
+        self.assertEqual(result["siteUrl"], "https://mock.here.now/site")
+        self.assertEqual(fetch.call_count, 6)
+        self.assertFalse(receipt_path.exists())
+
+    def test_upload_failure_retains_receipt_and_retry_reuses_it(self):
+        seed = fixture()
+        now = dt.datetime(2026, 8, 11, 12, 0, tzinfo=dt.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_root = Path(directory)
+            receipt_path = winnow._receipt_path(seed, receipt_root)
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)) as fetch:
+                with self.assertRaises(winnow.PublishError):
+                    self._publish_with_fake_site(
+                        seed,
+                        receipt_root=receipt_root,
+                        now=now,
+                        upload_error=winnow.PublishError("upload failed"),
+                    )
+                self.assertTrue(receipt_path.exists())
+                self._publish_with_fake_site(seed, receipt_root=receipt_root, now=now + dt.timedelta(hours=1))
+        self.assertEqual(fetch.call_count, 6)
+        self.assertFalse(receipt_path.exists())
+
+    def test_changed_manifest_after_failed_publish_requires_fresh_verification(self):
+        seed = fixture()
+        now = dt.datetime(2026, 8, 11, 12, 0, tzinfo=dt.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_root = Path(directory)
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)) as fetch:
+                with self.assertRaises(winnow.PublishError):
+                    self._publish_with_fake_site(
+                        seed,
+                        receipt_root=receipt_root,
+                        now=now,
+                        upload_error=winnow.PublishError("upload failed"),
+                    )
+                changed = copy.deepcopy(seed)
+                changed["round"]["options"][0]["image"]["url"] = "https://example.com/sofas/changed.png"
+                self._publish_with_fake_site(changed, receipt_root=receipt_root, now=now + dt.timedelta(hours=1))
+        self.assertEqual(fetch.call_count, 12)
+
+    def test_failed_hosted_verification_retains_receipt(self):
+        seed = fixture()
+        now = dt.datetime(2026, 8, 11, 12, 0, tzinfo=dt.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            receipt_root = Path(directory)
+            receipt_path = winnow._receipt_path(seed, receipt_root)
+            with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)):
+                with self.assertRaises(winnow.PublishError):
+                    self._publish_with_fake_site(
+                        seed,
+                        receipt_root=receipt_root,
+                        now=now,
+                        live_error=winnow.PublishError("hosted verification failed"),
+                    )
+            self.assertTrue(receipt_path.exists())
+
+    def test_create_and_finalize_failures_retain_receipt(self):
+        now = dt.datetime(2026, 8, 11, 12, 0, tzinfo=dt.timezone.utc)
+        for failure_name, error in [
+            ("create_error", winnow.PublishError("create failed")),
+            ("finalize_error", winnow.PublishError("finalize failed")),
+        ]:
+            with self.subTest(failure_name=failure_name), tempfile.TemporaryDirectory() as directory:
+                seed = fixture()
+                receipt_root = Path(directory)
+                receipt_path = winnow._receipt_path(seed, receipt_root)
+                with patch.object(winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)):
+                    with self.assertRaises(winnow.PublishError):
+                        self._publish_with_fake_site(
+                            seed,
+                            receipt_root=receipt_root,
+                            now=now,
+                            **{failure_name: error},
+                        )
+                self.assertTrue(receipt_path.exists())
+
+    def test_receipt_deletion_failure_does_not_fail_publication(self):
+        seed = fixture()
+        now = dt.datetime(2026, 8, 11, 12, 0, tzinfo=dt.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            winnow, "_fetch_image", side_effect=lambda url, *, timeout: verified_image(url)
+        ), patch.object(winnow, "_delete_receipt", side_effect=OSError("receipt unavailable")):
+            result = self._publish_with_fake_site(seed, receipt_root=Path(directory), now=now)
+        self.assertEqual(result["roundNumber"], 1)
 
     def test_publish_is_anonymous_and_returns_round_number_without_claim_token(self):
         base_url = "https://mock.here.now"
@@ -598,7 +740,7 @@ class PublisherTests(unittest.TestCase):
 
         self.assertEqual(result["siteUrl"], base_url + "/site")
         self.assertEqual(result["roundNumber"], 1)
-        delete_receipt.assert_called_once_with(seed)
+        delete_receipt.assert_called_once_with(seed, receipt_root=None)
         self.assertNotIn("claimToken", json.dumps(result))
         self.assertIn(b"content=\"2026-08-09T12:00:00.000Z\"", uploaded[0])
         self.assertEqual([method for method, _url, _body, _headers in requests], ["POST", "PUT", "POST", "GET"])
