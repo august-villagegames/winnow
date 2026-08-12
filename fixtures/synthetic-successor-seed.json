@@ -1,7 +1,7 @@
 {
   "protocol": "winnow.portable-session",
-  "schemaVersion": 3,
-  "runtimeVersion": "3.0.2",
+  "schemaVersion": 4,
+  "runtimeVersion": "4.0.0",
   "session": {
     "id": "synthetic-sofa-session",
     "title": "Durable couch under $2,000",
@@ -11,6 +11,18 @@
     "imagePolicy": {"mode": "required"}
   },
   "profileExclusions": [],
+  "profilePatterns": [
+    {
+      "key": "{\"direction\":\"include\",\"factorId\":\"seats\",\"polarity\":\"like\",\"value\":\"3-seat\"}",
+      "factorId": "seats",
+      "polarity": "like",
+      "direction": "include",
+      "value": "3-seat",
+      "mean": null,
+      "supportCount": 3,
+      "strength": 1
+    }
+  ],
   "history": [
     {
       "number": 1,
