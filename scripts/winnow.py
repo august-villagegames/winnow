@@ -303,8 +303,8 @@ def _validate_round(round_value: Any, expected_number: int, completed: bool, pat
     _unique([source["id"] for source in sources], f"{path}.sources", "source IDs")
     source_map = {source["id"]: source for source in sources}
     options_raw = _array(_required(round_value, "options", path), f"{path}.options")
-    if not 4 <= len(options_raw) <= 6:
-        raise ValidationError([f"{path}.options: requires 4–6 options"])
+    if not 4 <= len(options_raw) <= 10:
+        raise ValidationError([f"{path}.options: requires 4–10 options"])
     options = [_validate_option(value, index, f"{path}.options", factors, source_map) for index, value in enumerate(options_raw)]
     _unique([option["id"] for option in options], f"{path}.options", "option IDs")
     if completed:

@@ -68,6 +68,17 @@ def four_option_seed() -> dict:
     return seed
 
 
+def ten_option_seed() -> dict:
+    seed = fixture()
+    for option_number in range(7, 11):
+        option = copy.deepcopy(seed["round"]["options"][option_number - 7])
+        option["id"] = f"sofa-{option_number}"
+        option["title"] = f"Additional sofa {option_number}"
+        option["optionUrl"]["url"] = f"https://example.com/sofas/additional-{option_number}"
+        seed["round"]["options"].append(option)
+    return seed
+
+
 def verified_image(url: str) -> dict:
     return {"url": url, "contentType": "image/png", "bytes": len(PNG_BYTES)}
 
@@ -85,6 +96,20 @@ class ProtocolTests(unittest.TestCase):
         self.assertIs(winnow.validate_seed(seed), seed)
         self.assertEqual(seed["schemaVersion"], 3)
         self.assertEqual(len(seed["round"]["options"]), 6)
+
+    def test_round_allows_up_to_ten_options(self):
+        seed = ten_option_seed()
+        self.assertIs(winnow.validate_seed(seed), seed)
+        self.assertEqual(len(seed["round"]["options"]), 10)
+
+        too_many = copy.deepcopy(seed)
+        option = copy.deepcopy(too_many["round"]["options"][0])
+        option["id"] = "sofa-11"
+        option["title"] = "Additional sofa 11"
+        option["optionUrl"]["url"] = "https://example.com/sofas/additional-11"
+        too_many["round"]["options"].append(option)
+        with self.assertRaisesRegex(winnow.ValidationError, "requires 4–10 options"):
+            winnow.validate_seed(too_many)
 
     def test_valid_round_two_continuation_and_successor(self):
         continuation = fixture("synthetic-continuation.json")
