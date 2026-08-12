@@ -4,6 +4,7 @@ import base64
 import copy
 import importlib.util
 import json
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -18,6 +19,57 @@ SPEC.loader.exec_module(winnow)
 
 def fixture(name: str = "synthetic-seed.json") -> dict:
     return json.loads((ROOT / "fixtures" / name).read_text(encoding="utf-8"))
+
+
+PNG_BYTES = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+
+
+class ImageHeaders(dict):
+    def get_content_type(self):
+        return self.get("Content-Type", "").split(";", 1)[0]
+
+
+class ImageResponse:
+    def __init__(
+        self,
+        *,
+        body: bytes = PNG_BYTES,
+        content_type: str | None = "image/png",
+        content_length: str | None = None,
+        final_url: str = "https://cdn.example.net/image.png",
+        status: int = 200,
+    ):
+        headers = {}
+        if content_type is not None:
+            headers["Content-Type"] = content_type
+        if content_length is not None:
+            headers["Content-Length"] = content_length
+        self.body = body
+        self.headers = ImageHeaders(headers)
+        self.final_url = final_url
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def geturl(self):
+        return self.final_url
+
+    def read(self, _limit):
+        return self.body
+
+
+def four_option_seed() -> dict:
+    seed = fixture()
+    seed["round"]["options"] = seed["round"]["options"][:4]
+    return seed
+
+
+def verified_image(url: str) -> dict:
+    return {"url": url, "contentType": "image/png", "bytes": len(PNG_BYTES)}
 
 
 class RepositoryChecks(unittest.TestCase):
@@ -167,6 +219,11 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_seed(seed)
 
+        seed = fixture()
+        seed["round"]["sources"][0]["url"] = "https://user:password@example.com/sofas/northline"
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
     def test_multiple_images_are_limited_and_must_use_one_shape(self):
         seed = fixture()
         seed["round"]["options"][0].pop("image")
@@ -200,33 +257,14 @@ class ProtocolTests(unittest.TestCase):
         self.assertIs(winnow.validate_seed(seed), seed)
         self.assertIn(winnow.seed_hash(seed), winnow.build_html(seed).decode("utf-8"))
 
-        image_bytes = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
-
-        class Headers(dict):
-            def get_content_type(self):
-                return self["Content-Type"].split(";", 1)[0]
-
-        class Response:
-            status = 200
-            headers = Headers({"Content-Type": "image/png", "Content-Length": str(len(image_bytes))})
-
-            def __init__(self, url):
-                self.url = url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_args):
-                return False
-
-            def geturl(self):
-                return self.url
-
-            def read(self, _limit):
-                return image_bytes
-
         def open_image(request, *, timeout):
-            return Response(request.full_url)
+            self.assertEqual(request.get_method(), "GET")
+            self.assertIn("image/png", request.get_header("Accept"))
+            return ImageResponse(
+                body=PNG_BYTES,
+                content_length=str(len(PNG_BYTES)),
+                final_url=request.full_url,
+            )
 
         with patch.object(winnow.urllib.request, "urlopen", side_effect=open_image) as fetch:
             result = winnow.verify_image_urls(seed)
@@ -236,7 +274,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(fetch.call_count, 6)
         item = next(item for item in result["verified"] if item["url"] == "https://cdn.example.net/sofas/northline.png")
         self.assertEqual(item["contentType"], "image/png")
-        self.assertEqual(item["bytes"], len(image_bytes))
+        self.assertEqual(item["bytes"], len(PNG_BYTES))
 
     def test_image_verification_only_fetches_current_round_images(self):
         seed = fixture("synthetic-successor-seed.json")
@@ -258,6 +296,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(result["images"], 4)
         self.assertEqual(result["uniqueImages"], 4)
         self.assertEqual([item["url"] for item in result["verified"]], current_urls)
+        self.assertEqual(fetch.call_count, 4)
         self.assertEqual({call.args[0] for call in fetch.call_args_list}, set(current_urls))
 
     def test_image_verification_deduplicates_current_round_urls(self):
@@ -275,6 +314,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(result["images"], 6)
         self.assertEqual(result["uniqueImages"], 5)
         self.assertEqual(fetch.call_count, 5)
+        self.assertEqual([call.args[0] for call in fetch.call_args_list].count(duplicate_url), 1)
 
     def test_not_applicable_image_verification_does_not_fetch(self):
         seed = fixture()
@@ -286,38 +326,163 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(result, {"scope": "currentRound", "images": 0, "uniqueImages": 0, "verified": []})
         fetch.assert_not_called()
 
-    def test_image_verification_rejects_non_image_bytes(self):
-        seed = fixture()
-        seed["round"]["options"][0]["image"]["url"] = "https://cdn.example.net/sofas/northline.png"
+    def test_image_verification_runs_four_distinct_urls_concurrently(self):
+        seed = four_option_seed()
+        barrier = threading.Barrier(4)
+        lock = threading.Lock()
+        active = 0
+        peak_active = 0
 
-        class Headers(dict):
-            def get_content_type(self):
-                return self["Content-Type"].split(";", 1)[0]
+        def fetch_image(url, *, timeout):
+            nonlocal active, peak_active
+            with lock:
+                active += 1
+                peak_active = max(peak_active, active)
+            try:
+                barrier.wait(timeout=2)
+                return verified_image(url)
+            finally:
+                with lock:
+                    active -= 1
 
-        class Response:
-            status = 200
-            headers = Headers({"Content-Type": "image/png", "Content-Length": "15"})
+        with patch.object(winnow, "_fetch_image", side_effect=fetch_image) as fetch:
+            result = winnow.verify_image_urls(seed)
 
-            def __enter__(self):
-                return self
+        self.assertEqual(fetch.call_count, 4)
+        self.assertEqual(peak_active, 4)
+        self.assertEqual(result["uniqueImages"], 4)
 
-            def __exit__(self, *_args):
-                return False
+    def test_image_verification_preserves_first_url_order_after_reverse_completion(self):
+        seed = four_option_seed()
+        urls = [option["image"]["url"] for option in seed["round"]["options"]]
+        positions = {url: index for index, url in enumerate(urls)}
+        barrier = threading.Barrier(4)
+        releases = [threading.Event() for _url in urls]
+        completion_order: list[str] = []
+        completion_lock = threading.Lock()
 
-            def geturl(self):
-                return "https://cdn.example.net/sofas/northline.png"
+        def fetch_image(url, *, timeout):
+            index = positions[url]
+            barrier.wait(timeout=2)
+            if index == len(urls) - 1:
+                releases[index].set()
+            if not releases[index].wait(timeout=2):
+                raise AssertionError("verification completion chain timed out")
+            with completion_lock:
+                completion_order.append(url)
+            if index:
+                releases[index - 1].set()
+            return verified_image(url)
 
-            def read(self, _limit):
-                return b"<html>not image"
+        with patch.object(winnow, "_fetch_image", side_effect=fetch_image):
+            result = winnow.verify_image_urls(seed)
 
-        with patch.object(winnow.urllib.request, "urlopen", return_value=Response()):
-            with self.assertRaises(winnow.ValidationError):
+        self.assertEqual(completion_order, list(reversed(urls)))
+        self.assertEqual([item["url"] for item in result["verified"]], urls)
+
+    def test_image_verification_reports_multiple_failures_in_source_order(self):
+        seed = four_option_seed()
+        urls = [option["image"]["url"] for option in seed["round"]["options"]]
+        positions = {url: index for index, url in enumerate(urls)}
+        barrier = threading.Barrier(4)
+        releases = [threading.Event() for _url in urls]
+        completion_order: list[int] = []
+        completion_lock = threading.Lock()
+
+        def fetch_image(url, *, timeout):
+            index = positions[url]
+            barrier.wait(timeout=2)
+            if index == len(urls) - 1:
+                releases[index].set()
+            if not releases[index].wait(timeout=2):
+                raise AssertionError("verification failure chain timed out")
+            with completion_lock:
+                completion_order.append(index)
+            if index:
+                releases[index - 1].set()
+            raise ValueError(f"failure-{index}")
+
+        with patch.object(winnow, "_fetch_image", side_effect=fetch_image):
+            with self.assertRaises(winnow.ValidationError) as raised:
                 winnow.verify_image_urls(seed)
 
-        seed = fixture()
-        seed["round"]["sources"][0]["url"] = "https://user:password@example.com/sofas/northline"
-        with self.assertRaises(winnow.ValidationError):
-            winnow.validate_seed(seed)
+        self.assertEqual(completion_order, [3, 2, 1, 0])
+        self.assertEqual(
+            raised.exception.errors,
+            [
+                f"image verification failed: seed.round.options[{index}].image: failure-{index}"
+                for index in range(4)
+            ],
+        )
+
+    def test_fetch_image_accepts_each_supported_raster_signature(self):
+        cases = [
+            ("image/png", PNG_BYTES),
+            ("image/jpeg", b"\xff\xd8\xff\xe0jpeg"),
+            ("image/gif", b"GIF89aimage"),
+            ("image/webp", b"RIFF\x04\x00\x00\x00WEBPdata"),
+            ("image/avif", b"\x00\x00\x00\x18ftypavifdata"),
+        ]
+        for content_type, body in cases:
+            with self.subTest(content_type=content_type), patch.object(
+                winnow.urllib.request,
+                "urlopen",
+                return_value=ImageResponse(
+                    body=body,
+                    content_type=content_type,
+                    content_length=str(len(body)),
+                ),
+            ):
+                result = winnow._fetch_image("https://cdn.example.net/image")
+                self.assertEqual(result["contentType"], content_type)
+                self.assertEqual(result["bytes"], len(body))
+
+    def test_fetch_image_rejects_unsafe_or_invalid_responses(self):
+        oversized_body = PNG_BYTES + b"x" * winnow.IMAGE_MAX_BYTES
+        cases = [
+            ("non-2xx status", ImageResponse(status=404), ValueError, "HTTP status 404"),
+            ("non-HTTPS redirect", ImageResponse(final_url="http://cdn.example.net/image.png"), winnow.ValidationError, "credential-free HTTPS"),
+            ("credentialed redirect", ImageResponse(final_url="https://user:secret@cdn.example.net/image.png"), winnow.ValidationError, "credential-free HTTPS"),
+            ("missing content type", ImageResponse(content_type=None), ValueError, "unsupported content type missing"),
+            ("unsupported content type", ImageResponse(content_type="text/html"), ValueError, "unsupported content type text/html"),
+            ("nonnumeric content length", ImageResponse(content_length="many"), ValueError, "invalid Content-Length"),
+            ("negative content length", ImageResponse(content_length="-1"), ValueError, "invalid Content-Length"),
+            ("declared body too large", ImageResponse(content_length=str(winnow.IMAGE_MAX_BYTES + 1)), ValueError, "response exceeds"),
+            ("actual body too large", ImageResponse(body=oversized_body), ValueError, "response exceeds"),
+            ("empty body", ImageResponse(body=b"", content_length="0"), ValueError, "signature was not recognized"),
+            ("unrecognized body", ImageResponse(body=b"<html>error</html>", content_type="image/png"), ValueError, "signature was not recognized"),
+            ("MIME-signature mismatch", ImageResponse(body=b"GIF89aimage", content_type="image/png"), ValueError, "does not match image/gif bytes"),
+        ]
+        for label, response, error_type, message in cases:
+            with self.subTest(label=label), patch.object(winnow.urllib.request, "urlopen", return_value=response):
+                with self.assertRaisesRegex(error_type, message):
+                    winnow._fetch_image("https://cdn.example.net/image.png")
+
+    def test_fetch_image_normalizes_http_and_network_failures(self):
+        failures = [
+            (
+                winnow.urllib.error.HTTPError(
+                    "https://cdn.example.net/image.png",
+                    403,
+                    "Forbidden",
+                    ImageHeaders(),
+                    None,
+                ),
+                "HTTP status 403",
+            ),
+            (winnow.urllib.error.URLError("DNS failed"), r"network error \(URLError\)"),
+            (TimeoutError("timed out"), r"network error \(TimeoutError\)"),
+        ]
+        for failure, message in failures:
+            with self.subTest(failure=type(failure).__name__), patch.object(
+                winnow.urllib.request,
+                "urlopen",
+                side_effect=failure,
+            ):
+                with self.assertRaisesRegex(ValueError, message):
+                    winnow._fetch_image("https://cdn.example.net/image.png")
+            if isinstance(failure, winnow.urllib.error.HTTPError):
+                failure.close()
 
     def test_raw_html_and_control_characters_are_rejected(self):
         for value in ["<script>alert(1)</script>", "Northline\x00sofa"]:
@@ -476,11 +641,22 @@ class PublisherTests(unittest.TestCase):
             )
 
     def test_publish_image_verification_is_a_hard_gate(self):
-        with patch.object(winnow, "verify_image_urls", side_effect=winnow.ValidationError(["image verification failed"])) as verify, patch.object(winnow, "_http_json") as request:
+        with (
+            patch.object(
+                winnow,
+                "verify_image_urls",
+                side_effect=winnow.ValidationError(["image verification failed"]),
+            ) as verify,
+            patch.object(winnow, "_http_json") as request,
+            patch.object(winnow, "_http_upload") as upload,
+            patch.object(winnow, "_fetch_live") as fetch_live,
+        ):
             with self.assertRaises(winnow.ValidationError):
                 winnow.publish(fixture(), endpoint="https://mock.here.now/api/v1/publish")
         verify.assert_called_once_with(fixture())
         request.assert_not_called()
+        upload.assert_not_called()
+        fetch_live.assert_not_called()
 
     def test_fetch_live_requires_exact_deployment_markers(self):
         expected = {
@@ -544,6 +720,24 @@ class PublisherTests(unittest.TestCase):
                         expected["expires"],
                     )
 
+        semantically_equivalent_but_inexact = hosted_html().replace(
+            f'<meta name="winnow-session-id" content="{expected["session"]}">'.encode(),
+            f'<meta content="{expected["session"]}" name="winnow-session-id">'.encode(),
+        )
+        with patch.object(
+            winnow.urllib.request,
+            "urlopen",
+            side_effect=lambda _request, timeout: Response(semantically_equivalent_but_inexact),
+        ):
+            with self.assertRaisesRegex(winnow.PublishError, "session id mismatch"):
+                winnow._fetch_live(
+                    "https://mock.here.now/site",
+                    expected["session"],
+                    expected["seed"],
+                    expected["runtime"],
+                    expected["expires"],
+                )
+
     def test_fetch_live_rejects_non_https_site_urls(self):
         with patch.object(winnow.urllib.request, "urlopen") as request:
             with self.assertRaises(winnow.PublishError):
@@ -602,7 +796,10 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(result["siteUrl"], base_url + "/site")
         self.assertEqual(result["roundNumber"], 1)
         self.assertEqual(result["imageVerification"], {"scope": "currentRound", "images": 6, "uniqueImages": 6})
+        self.assertEqual(set(result["timingsMs"]), {"validation", "imageVerification", "sitePublication", "total"})
         self.assertTrue(all(isinstance(value, int) and value >= 0 for value in result["timingsMs"].values()))
+        self.assertNotIn("cache", json.dumps(result).lower())
+        self.assertNotIn("receipt", json.dumps(result).lower())
         self.assertNotIn("claimToken", json.dumps(result))
         self.assertEqual(len(uploaded), 1)
         self.assertIn(b"content=\"2026-08-09T12:00:00.000Z\"", uploaded[0])

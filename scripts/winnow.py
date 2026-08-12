@@ -603,12 +603,13 @@ def _fetch_image(url: str, *, timeout: float = 15) -> dict[str, Any]:
             content_length = headers.get("Content-Length")
             if content_length is not None:
                 try:
-                    if int(content_length) > IMAGE_MAX_BYTES:
-                        raise ValueError(f"response exceeds {IMAGE_MAX_BYTES} bytes")
+                    declared_length = int(content_length)
                 except ValueError as exc:
-                    if str(exc).startswith("response exceeds"):
-                        raise
                     raise ValueError("invalid Content-Length") from exc
+                if declared_length < 0:
+                    raise ValueError("invalid Content-Length")
+                if declared_length > IMAGE_MAX_BYTES:
+                    raise ValueError(f"response exceeds {IMAGE_MAX_BYTES} bytes")
             body = response.read(IMAGE_MAX_BYTES + 1)
             if len(body) > IMAGE_MAX_BYTES:
                 raise ValueError(f"response exceeds {IMAGE_MAX_BYTES} bytes")
