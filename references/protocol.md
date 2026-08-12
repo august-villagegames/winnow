@@ -50,21 +50,26 @@ decisions (products, shoes, clothing, travel, homes, people, styles, and
 designs) require images.
 
 An option may provide either the legacy singular `image` object or the
-preferred `images` array. `images` contains 1–5 source-backed images; each
-image may use a different count across options, but a required-image session
-must include at least one for every option. An image's `sourceId` identifies the
-cited source page; the direct image URL may be hosted on a separate CDN and
-does not need to share the source page's hostname. Before a session is linked
-or published, every unique image URL in the active round must be fetched over
-HTTPS and verified as a successful, credential-free response with an allowed
-raster image content type (`image/png`, `image/jpeg`, `image/gif`, `image/webp`,
-or `image/avif`) whose bytes match the declared type and remain below the
-verifier's size limit. Redirects must remain HTTPS and the final response must
-not be HTML, JSON, empty, oversized, or a content-type mismatch. Images carried
-in completed history rounds were verified when those rounds were published and
-are not refetched for a successor. `publish` runs this gate automatically;
-the separate `verify-images` command remains available as a diagnostic and
-may reuse a fresh verification receipt.
+preferred `images` array. Prefer one strong, source-backed image per option;
+additional images are allowed only when they show materially distinct,
+decision-relevant information. `images` contains 1–5 source-backed images;
+each image may use a different count across options, but a required-image
+session must include at least one for every option. An image's `sourceId`
+identifies the cited source page; the direct image URL may be hosted on a
+separate CDN and does not need to share the source page's hostname. Before a
+session is linked or published, every unique image URL in the active round
+must be fetched over HTTPS and verified as a successful, credential-free
+response with an allowed raster image content type (`image/png`, `image/jpeg`,
+`image/gif`, `image/webp`, or `image/avif`) whose bytes match the declared type
+and remain below the verifier's size limit. Redirects must remain HTTPS and
+the final response must not be HTML, JSON, empty, oversized, or a content-type
+mismatch. Images carried in completed history rounds were verified when their
+original rounds were published and are not refetched for a successor.
+`publish` runs this gate automatically; the separate `verify-images` command
+remains available as a diagnostic and may reuse a fresh receipt bound to the
+session and round. Receipts expire logically after 24 hours, and successful
+publication deletes the receipt; cache and cleanup failures never bypass fresh
+verification.
 
 The response verifier checks the image response bytes and does not add runtime
 network calls or local media artifacts.
@@ -110,7 +115,7 @@ only the non-primary factors and must research 4–6 entirely new options. It
 must retain the session image policy and collect verified images for every new
 option when the policy is `required`.
 
-Validate the workflow with:
+Validate the workflow with optional diagnostics:
 
 ```sh
 python3 scripts/winnow.py validate seed.json
@@ -123,7 +128,11 @@ Publishing is the only delivery workflow. The publisher compiles the page in
 memory, uploads it to HereNow, and returns the hosted URL. Do not invoke a
 local build step or create, open, attach, or return an HTML file or local file
 path. This keeps the renderer reusable if another hosted provider is added in
-the future.
+the future. Before returning, it deterministically verifies the hosted page's
+exact session ID, seed hash, runtime version, and normalized expiration meta
+tags. Publish output retains the existing publication fields and adds current-
+round image counts/cache status plus non-negative `timingsMs` for validation,
+image verification, site publication, and total work.
 
 Round 1 may publish without a continuation. Later rounds require the matching
 continuation and are always published as a new anonymous HereNow URL.

@@ -15,7 +15,9 @@ The commands below assume this directory is the current working directory.
 ## Local checks
 
 The normal initial-round workflow is a single `publish` command. It compiles
-the page in memory, uploads it to HereNow, and verifies the live hosted page.
+the page in memory, uploads it to HereNow, and deterministically verifies that
+the hosted page contains the exact session ID, seed hash, runtime version, and
+normalized expiration metadata.
 
 ```sh
 python3 scripts/winnow.py publish seed.json
@@ -23,7 +25,9 @@ python3 scripts/winnow.py publish seed.json
 
 `validate` and `verify-images` remain available as optional diagnostics;
 `publish` validates the seed and verifies the current round’s images, reusing a
-fresh verification receipt when one exists.
+fresh session/round-bound verification receipt when one exists. Receipts have
+a 24-hour logical TTL and are deleted after successful publication; cache or
+cleanup failures never bypass fresh verification.
 
 For the included synthetic fixture, the schema-only check is:
 
@@ -44,7 +48,9 @@ python3 scripts/winnow.py publish next-seed.json --continuation continuation.jso
 
 For a successor, `publish` checks the new current round. Images retained in
 `history` were verified when their original rounds were published and are not
-fetched again.
+network-reverified. Publish output also reports current-round image counts,
+cache status, and non-negative timings for validation, image verification, site
+publication, and total work.
 
 Run the repository tests as well:
 
@@ -54,9 +60,7 @@ node --test tests/runtime-core.test.mjs
 ```
 
 The publish command returns the hosted HereNow URL; do not create, open, or
-return a local HTML file or local file path. Rate all six cards at the hosted
-URL to see the summary, then use `Generate a better round →` to copy the fixed
-agent handoff and continuation package.
+return a local HTML file or local file path.
 
 The synthetic fixture uses reserved `example.com` image URLs to exercise the
 compiled media and browser fallback; use `verify-images` as an optional
@@ -64,7 +68,9 @@ diagnostic against a researched seed with real source-backed URLs. An image
 may be hosted on a separate CDN from its cited source page.
 
 Options may use the legacy singular `image` field or the preferred `images`
-array with up to five images. Every session is image-required by default;
+array with up to five images. Prefer one strong source-backed image per option;
+add more only when they show materially distinct, decision-relevant
+information. Every session is image-required by default;
 declare `session.imagePolicy.mode` as `notApplicable` with a reason only for a
 clearly non-visual decision. Initialize the required root
 `profileExclusions` field to `[]`. Multiple images appear as an accessible
@@ -79,7 +85,8 @@ broadly in private, select only 4–6 representative source-supported options,
 decide the session image policy, choose 1–6 comparison factors, collect at
 least one direct source-backed image for every option unless the policy is
 explicitly `notApplicable`, validate, and publish Round 1
-through HereNow.
+through HereNow. Only current-round images are fetched; completed rounds
+remain structurally immutable and are not network-reverified.
 The image `sourceId` identifies the cited source page; it does not require the
 direct image URL to share that page's hostname. `publish` performs the image
 verification automatically.

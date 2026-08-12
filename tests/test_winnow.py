@@ -591,7 +591,7 @@ class PublisherTests(unittest.TestCase):
             if upload_error is not None:
                 raise upload_error
 
-        def fake_live(url, expected_session_id, *, allow_http=False, timeout=30):
+        def fake_live(url, expected_session_id, expected_seed_hash, expected_runtime_version, expected_expires_at, *, allow_http=False, timeout=30):
             if live_error is not None:
                 raise live_error
 
@@ -608,6 +608,80 @@ class PublisherTests(unittest.TestCase):
             with self.assertRaises(winnow.ValidationError):
                 winnow.publish(fixture(), endpoint="https://mock.here.now/api/v1/publish")
         verify.assert_called_once_with(fixture(), receipt_root=None, now=None)
+        request.assert_not_called()
+
+    def test_fetch_live_requires_exact_deployment_markers(self):
+        expected = {
+            "session": "synthetic-sofa-session",
+            "seed": "a" * 64,
+            "runtime": "3.0.2",
+            "expires": "2026-08-12T12:00:00.000Z",
+        }
+
+        def hosted_html(**overrides):
+            values = {**expected, **overrides}
+            return "".join(
+                [
+                    f'<meta name="winnow-session-id" content="{values["session"]}">',
+                    f'<meta name="winnow-seed-hash" content="{values["seed"]}">',
+                    f'<meta name="winnow-runtime-version" content="{values["runtime"]}">',
+                    f'<meta name="winnow-expires-at" content="{values["expires"]}">',
+                ]
+            ).encode("utf-8")
+
+        class Response:
+            status = 200
+
+            def __init__(self, body: bytes):
+                self.body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return self.body
+
+        with patch.object(
+            winnow.urllib.request,
+            "urlopen",
+            side_effect=lambda _request, timeout: Response(hosted_html()),
+        ):
+            winnow._fetch_live(
+                "https://mock.here.now/site",
+                expected["session"],
+                expected["seed"],
+                expected["runtime"],
+                expected["expires"],
+            )
+
+        for field, wrong_value in [("session", "other-session"), ("seed", "b" * 64), ("runtime", "3.0.1"), ("expires", "2026-08-13T12:00:00.000Z")]:
+            with self.subTest(field=field), patch.object(
+                winnow.urllib.request,
+                "urlopen",
+                side_effect=lambda _request, timeout, value={field: wrong_value}: Response(hosted_html(**value)),
+            ):
+                with self.assertRaises(winnow.PublishError):
+                    winnow._fetch_live(
+                        "https://mock.here.now/site",
+                        expected["session"],
+                        expected["seed"],
+                        expected["runtime"],
+                        expected["expires"],
+                    )
+
+    def test_fetch_live_rejects_non_https_site_urls(self):
+        with patch.object(winnow.urllib.request, "urlopen") as request:
+            with self.assertRaises(winnow.PublishError):
+                winnow._fetch_live(
+                    "http://mock.here.now/site",
+                    "synthetic-sofa-session",
+                    "a" * 64,
+                    "3.0.2",
+                    "2026-08-12T12:00:00.000Z",
+                )
         request.assert_not_called()
 
     def test_diagnostic_verification_is_reused_by_publish_and_success_deletes_receipt(self):
@@ -732,14 +806,16 @@ class PublisherTests(unittest.TestCase):
             requests.append(("PUT", url, None, headers))
             uploaded.append(html)
 
-        def fake_fetch(url, expected_session_id, *, allow_http=False, timeout=30):
+        def fake_fetch(url, expected_session_id, expected_seed_hash, expected_runtime_version, expected_expires_at, *, allow_http=False, timeout=30):
             requests.append(("GET", url, None, None))
 
-        with patch.object(winnow, "verify_image_urls", return_value={"images": 6, "uniqueImages": 6, "verified": []}), patch.object(winnow, "_http_json", side_effect=fake_json), patch.object(winnow, "_http_upload", side_effect=fake_upload), patch.object(winnow, "_fetch_live", side_effect=fake_fetch), patch.object(winnow, "_delete_receipt") as delete_receipt:
+        with patch.object(winnow, "verify_image_urls", return_value={"scope": "currentRound", "images": 6, "uniqueImages": 6, "cacheHit": False, "verified": []}), patch.object(winnow, "_http_json", side_effect=fake_json), patch.object(winnow, "_http_upload", side_effect=fake_upload), patch.object(winnow, "_fetch_live", side_effect=fake_fetch), patch.object(winnow, "_delete_receipt") as delete_receipt:
             result = winnow.publish(seed, endpoint=base_url + "/api/v1/publish")
 
         self.assertEqual(result["siteUrl"], base_url + "/site")
         self.assertEqual(result["roundNumber"], 1)
+        self.assertEqual(result["imageVerification"], {"scope": "currentRound", "images": 6, "uniqueImages": 6, "cacheHit": False})
+        self.assertTrue(all(isinstance(value, int) and value >= 0 for value in result["timingsMs"].values()))
         delete_receipt.assert_called_once_with(seed, receipt_root=None)
         self.assertNotIn("claimToken", json.dumps(result))
         self.assertIn(b"content=\"2026-08-09T12:00:00.000Z\"", uploaded[0])

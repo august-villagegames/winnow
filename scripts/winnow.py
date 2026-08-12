@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -988,18 +989,48 @@ def _http_upload(url: str, html: bytes, headers: dict[str, Any] | None, *, timeo
         raise PublishError(f"here.now upload failed ({getattr(exc, 'code', 'network')})") from None
 
 
-def _fetch_live(url: str, expected_session_id: str, *, allow_http: bool = False, timeout: float = 30) -> None:
+def _meta_tag(name: str, value: str) -> str:
+    return f'<meta name="{name}" content="{value}">'
+
+
+def _fetch_live(
+    url: str,
+    expected_session_id: str,
+    expected_seed_hash: str,
+    expected_runtime_version: str,
+    expected_expires_at: str,
+    *,
+    allow_http: bool = False,
+    timeout: float = 30,
+) -> None:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" and not allow_http:
         raise PublishError("here.now returned a non-HTTPS site URL")
     request = urllib.request.Request(url, headers={"Accept": "text/html"}, method="GET")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = int(getattr(response, "status", 200) or 200)
+            if status < 200 or status >= 300:
+                raise PublishError(f"live Site verification failed (HTTP {status})")
             html = response.read(2_000_000).decode("utf-8", errors="strict")
+    except PublishError:
+        raise
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, UnicodeDecodeError) as exc:
         raise PublishError(f"live Site verification failed ({getattr(exc, 'code', 'network')})") from None
-    if f'name="winnow-session-id" content="{expected_session_id}"' not in html:
-        raise PublishError("live Site verification failed: session id mismatch")
+    expected_markers = {
+        "session id": _meta_tag("winnow-session-id", expected_session_id),
+        "seed hash": _meta_tag("winnow-seed-hash", expected_seed_hash),
+        "runtime version": _meta_tag("winnow-runtime-version", expected_runtime_version),
+        "expiration": _meta_tag("winnow-expires-at", expected_expires_at),
+    }
+    for label, marker in expected_markers.items():
+        if marker not in html:
+            raise PublishError(f"live Site verification failed: {label} mismatch")
+
+
+def _elapsed_ms(started: float, finished: float | None = None) -> int:
+    end = time.monotonic() if finished is None else finished
+    return max(0, int(round((end - started) * 1000)))
 
 
 def publish(
@@ -1011,6 +1042,8 @@ def publish(
     receipt_root: Path | None = None,
     now: dt.datetime | None = None,
 ) -> dict[str, Any]:
+    total_started = time.monotonic()
+    validation_started = total_started
     validate_seed(seed)
     if seed["history"]:
         if continuation is None:
@@ -1018,7 +1051,11 @@ def publish(
         validate_successor(continuation, seed)
     elif continuation is not None:
         validate_successor(continuation, seed)
-    verify_image_urls(seed, receipt_root=receipt_root, now=now)
+    validation_ms = _elapsed_ms(validation_started)
+    image_started = time.monotonic()
+    image_verification = verify_image_urls(seed, receipt_root=receipt_root, now=now)
+    image_verification_ms = _elapsed_ms(image_started)
+    publication_started = time.monotonic()
     html = build_html(seed)
     status, created = _http_json(endpoint, "POST", {"files": [{"path": "index.html", "size": len(html), "contentType": CONTENT_TYPE}]}, headers={"X-HereNow-Client": "winnow-portable/2"})
     if status < 200 or status >= 300 or created.get("anonymous") is not True:
@@ -1041,12 +1078,39 @@ def publish(
     site_url = created.get("siteUrl")
     if not isinstance(site_url, str):
         raise PublishError("here.now create response is missing siteUrl")
-    _fetch_live(site_url, seed["session"]["id"], allow_http=allow_http_test)
+    _fetch_live(
+        site_url,
+        seed["session"]["id"],
+        seed_hash(seed),
+        RUNTIME_VERSION,
+        _utc_expiration(expires_at),
+        allow_http=allow_http_test,
+    )
+    site_publication_ms = _elapsed_ms(publication_started)
     try:
         _delete_receipt(seed, receipt_root=receipt_root)
     except OSError:
         pass
-    return {"siteUrl": site_url, "expiresAt": expires_at, "sessionId": seed["session"]["id"], "seedHash": seed_hash(seed), "roundNumber": seed["round"]["number"]}
+    total_ms = _elapsed_ms(total_started)
+    return {
+        "siteUrl": site_url,
+        "expiresAt": expires_at,
+        "sessionId": seed["session"]["id"],
+        "seedHash": seed_hash(seed),
+        "roundNumber": seed["round"]["number"],
+        "imageVerification": {
+            "scope": image_verification.get("scope", "currentRound"),
+            "images": image_verification.get("images", 0),
+            "uniqueImages": image_verification.get("uniqueImages", 0),
+            "cacheHit": bool(image_verification.get("cacheHit", False)),
+        },
+        "timingsMs": {
+            "validation": validation_ms,
+            "imageVerification": image_verification_ms,
+            "sitePublication": site_publication_ms,
+            "total": total_ms,
+        },
+    }
 
 
 def inspect_continuation(value: dict[str, Any]) -> dict[str, Any]:
@@ -1059,7 +1123,7 @@ def main(argv: list[str]) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     validate_parser = subparsers.add_parser("validate", help="validate a seed JSON file")
     validate_parser.add_argument("seed", type=Path)
-    verify_images_parser = subparsers.add_parser("verify-images", help="fetch and verify every seed image URL")
+    verify_images_parser = subparsers.add_parser("verify-images", help="fetch and verify current-round image URLs")
     verify_images_parser.add_argument("seed", type=Path)
     verify_images_parser.add_argument("--timeout", type=float, default=15, help="per-image network timeout in seconds")
     inspect_parser = subparsers.add_parser("inspect-continuation", help="validate and summarize a continuation package")
