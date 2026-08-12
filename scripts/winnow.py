@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import argparse
 import base64
+import concurrent.futures
 import datetime as dt
 import hashlib
 import json
 import math
 import re
 import sys
+import time
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -547,23 +549,27 @@ def build_html(seed: dict[str, Any], *, expires_at: str | None = None, template_
     return html.encode("utf-8")
 
 
-def _image_entries(seed: dict[str, Any]) -> Iterable[tuple[str, dict[str, Any]]]:
-    rounds = [*seed.get("history", []), seed["round"]]
-    for round_index, round_value in enumerate(rounds):
-        round_name = "history" if round_index < len(seed.get("history", [])) else "round"
-        actual_index = round_index if round_name == "history" else "current"
-        for option_index, option in enumerate(round_value["options"]):
-            if "images" in option:
-                images = option["images"]
-                image_path = f"seed.{round_name}{'' if actual_index == 'current' else f'[{actual_index}]'}.options[{option_index}].images"
-            elif "image" in option:
-                images = [option["image"]]
-                image_path = f"seed.{round_name}{'' if actual_index == 'current' else f'[{actual_index}]'}.options[{option_index}].image"
-            else:
-                continue
-            for image_index, image in enumerate(images):
-                suffix = f"[{image_index}]" if "images" in option else ""
-                yield f"{image_path}{suffix}", image
+def _current_image_entries(seed: dict[str, Any]) -> Iterable[tuple[str, dict[str, Any]]]:
+    for option_index, option in enumerate(seed["round"]["options"]):
+        if "images" in option:
+            images = option["images"]
+            image_path = f"seed.round.options[{option_index}].images"
+        elif "image" in option:
+            images = [option["image"]]
+            image_path = f"seed.round.options[{option_index}].image"
+        else:
+            continue
+        for image_index, image in enumerate(images):
+            suffix = f"[{image_index}]" if "images" in option else ""
+            yield f"{image_path}{suffix}", image
+
+
+def _current_image_manifest(seed: dict[str, Any]) -> list[dict[str, str]]:
+    return [{"path": path, "url": image["url"]} for path, image in _current_image_entries(seed)]
+
+
+def _unique_manifest_urls(manifest: list[dict[str, str]]) -> list[str]:
+    return list(dict.fromkeys(item["url"] for item in manifest))
 
 
 def _image_type(body: bytes) -> str | None:
@@ -597,12 +603,13 @@ def _fetch_image(url: str, *, timeout: float = 15) -> dict[str, Any]:
             content_length = headers.get("Content-Length")
             if content_length is not None:
                 try:
-                    if int(content_length) > IMAGE_MAX_BYTES:
-                        raise ValueError(f"response exceeds {IMAGE_MAX_BYTES} bytes")
+                    declared_length = int(content_length)
                 except ValueError as exc:
-                    if str(exc).startswith("response exceeds"):
-                        raise
                     raise ValueError("invalid Content-Length") from exc
+                if declared_length < 0:
+                    raise ValueError("invalid Content-Length")
+                if declared_length > IMAGE_MAX_BYTES:
+                    raise ValueError(f"response exceeds {IMAGE_MAX_BYTES} bytes")
             body = response.read(IMAGE_MAX_BYTES + 1)
             if len(body) > IMAGE_MAX_BYTES:
                 raise ValueError(f"response exceeds {IMAGE_MAX_BYTES} bytes")
@@ -611,28 +618,64 @@ def _fetch_image(url: str, *, timeout: float = 15) -> dict[str, Any]:
                 raise ValueError("image signature was not recognized")
             if detected_type != content_type:
                 raise ValueError(f"content type {content_type} does not match {detected_type} bytes")
-            return {"url": final_parsed.geturl(), "contentType": content_type, "bytes": len(body)}
+            return {
+                "url": final_parsed.geturl(),
+                "contentType": content_type,
+                "bytes": len(body),
+            }
     except urllib.error.HTTPError as exc:
         raise ValueError(f"HTTP status {exc.code}") from None
     except (urllib.error.URLError, TimeoutError, UnicodeError) as exc:
         raise ValueError(f"network error ({type(exc).__name__})") from None
 
 
-def verify_image_urls(seed: Any, *, timeout: float = 15) -> dict[str, Any]:
-    seed = validate_seed(seed)
+def _verify_current_image_urls(manifest: list[dict[str, str]], *, timeout: float) -> list[dict[str, Any]]:
     references: dict[str, list[str]] = {}
-    for path, image in _image_entries(seed):
-        references.setdefault(image["url"], []).append(path)
-    errors: list[str] = []
-    verified: list[dict[str, Any]] = []
-    for url, paths in references.items():
-        try:
-            verified.append(_fetch_image(url, timeout=timeout))
-        except (ValueError, ValidationError) as exc:
-            errors.append(f"{', '.join(paths)}: {exc}")
+    for item in manifest:
+        references.setdefault(item["url"], []).append(item["path"])
+    unique_urls = list(references)
+    if not unique_urls:
+        return []
+    errors: list[tuple[int, str]] = []
+    verified: list[dict[str, Any] | None] = [None] * len(unique_urls)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(unique_urls))) as executor:
+        futures = {executor.submit(_fetch_image, url, timeout=timeout): index for index, url in enumerate(unique_urls)}
+        for future in concurrent.futures.as_completed(futures):
+            index = futures[future]
+            url = unique_urls[index]
+            paths = references[url]
+            try:
+                result = future.result()
+                if not isinstance(result, dict):
+                    raise ValueError("invalid image verification result")
+                verified[index] = dict(result)
+            except (ValueError, ValidationError) as exc:
+                errors.append((index, f"{', '.join(paths)}: {exc}"))
     if errors:
-        raise ValidationError([f"image verification failed: {error}" for error in errors])
-    return {"images": sum(len(paths) for paths in references.values()), "uniqueImages": len(references), "verified": verified}
+        errors.sort(key=lambda error: error[0])
+        raise ValidationError([f"image verification failed: {message}" for _index, message in errors])
+    return [result for result in verified if result is not None]
+
+
+def verify_image_urls(
+    seed: Any,
+    *,
+    timeout: float = 15,
+) -> dict[str, Any]:
+    seed = validate_seed(seed)
+    current_manifest = _current_image_manifest(seed)
+    image_count = len(current_manifest)
+    unique_image_count = len(_unique_manifest_urls(current_manifest))
+    result_base = {
+        "scope": "currentRound",
+        "images": image_count,
+        "uniqueImages": unique_image_count,
+    }
+    if not current_manifest:
+        return {**result_base, "verified": []}
+    verified = _verify_current_image_urls(current_manifest, timeout=timeout)
+    return {**result_base, "verified": verified}
 
 
 def _http_json(url: str, method: str, body: dict[str, Any] | None = None, *, headers: dict[str, str] | None = None, timeout: float = 30) -> tuple[int, dict[str, Any]]:
@@ -664,21 +707,59 @@ def _http_upload(url: str, html: bytes, headers: dict[str, Any] | None, *, timeo
         raise PublishError(f"here.now upload failed ({getattr(exc, 'code', 'network')})") from None
 
 
-def _fetch_live(url: str, expected_session_id: str, *, allow_http: bool = False, timeout: float = 30) -> None:
+def _meta_tag(name: str, value: str) -> str:
+    return f'<meta name="{name}" content="{value}">'
+
+
+def _fetch_live(
+    url: str,
+    expected_session_id: str,
+    expected_seed_hash: str,
+    expected_runtime_version: str,
+    expected_expires_at: str,
+    *,
+    allow_http: bool = False,
+    timeout: float = 30,
+) -> None:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" and not allow_http:
         raise PublishError("here.now returned a non-HTTPS site URL")
     request = urllib.request.Request(url, headers={"Accept": "text/html"}, method="GET")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = int(getattr(response, "status", 200) or 200)
+            if status < 200 or status >= 300:
+                raise PublishError(f"live Site verification failed (HTTP {status})")
             html = response.read(2_000_000).decode("utf-8", errors="strict")
+    except PublishError:
+        raise
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, UnicodeDecodeError) as exc:
         raise PublishError(f"live Site verification failed ({getattr(exc, 'code', 'network')})") from None
-    if f'name="winnow-session-id" content="{expected_session_id}"' not in html:
-        raise PublishError("live Site verification failed: session id mismatch")
+    expected_markers = {
+        "session id": _meta_tag("winnow-session-id", expected_session_id),
+        "seed hash": _meta_tag("winnow-seed-hash", expected_seed_hash),
+        "runtime version": _meta_tag("winnow-runtime-version", expected_runtime_version),
+        "expiration": _meta_tag("winnow-expires-at", expected_expires_at),
+    }
+    for label, marker in expected_markers.items():
+        if marker not in html:
+            raise PublishError(f"live Site verification failed: {label} mismatch")
 
 
-def publish(seed: dict[str, Any], *, continuation: dict[str, Any] | None = None, endpoint: str = PUBLISH_ENDPOINT, allow_http_test: bool = False) -> dict[str, Any]:
+def _elapsed_ms(started: float, finished: float | None = None) -> int:
+    end = time.monotonic() if finished is None else finished
+    return max(0, int(round((end - started) * 1000)))
+
+
+def publish(
+    seed: dict[str, Any],
+    *,
+    continuation: dict[str, Any] | None = None,
+    endpoint: str = PUBLISH_ENDPOINT,
+    allow_http_test: bool = False,
+) -> dict[str, Any]:
+    total_started = time.monotonic()
+    validation_started = total_started
     validate_seed(seed)
     if seed["history"]:
         if continuation is None:
@@ -686,7 +767,12 @@ def publish(seed: dict[str, Any], *, continuation: dict[str, Any] | None = None,
         validate_successor(continuation, seed)
     elif continuation is not None:
         validate_successor(continuation, seed)
-    verify_image_urls(seed)
+    digest = seed_hash(seed)
+    validation_ms = _elapsed_ms(validation_started)
+    image_started = time.monotonic()
+    image_verification = verify_image_urls(seed)
+    image_verification_ms = _elapsed_ms(image_started)
+    publication_started = time.monotonic()
     html = build_html(seed)
     status, created = _http_json(endpoint, "POST", {"files": [{"path": "index.html", "size": len(html), "contentType": CONTENT_TYPE}]}, headers={"X-HereNow-Client": "winnow-portable/2"})
     if status < 200 or status >= 300 or created.get("anonymous") is not True:
@@ -709,8 +795,34 @@ def publish(seed: dict[str, Any], *, continuation: dict[str, Any] | None = None,
     site_url = created.get("siteUrl")
     if not isinstance(site_url, str):
         raise PublishError("here.now create response is missing siteUrl")
-    _fetch_live(site_url, seed["session"]["id"], allow_http=allow_http_test)
-    return {"siteUrl": site_url, "expiresAt": expires_at, "sessionId": seed["session"]["id"], "seedHash": seed_hash(seed), "roundNumber": seed["round"]["number"]}
+    _fetch_live(
+        site_url,
+        seed["session"]["id"],
+        digest,
+        RUNTIME_VERSION,
+        _utc_expiration(expires_at),
+        allow_http=allow_http_test,
+    )
+    site_publication_ms = _elapsed_ms(publication_started)
+    total_ms = _elapsed_ms(total_started)
+    return {
+        "siteUrl": site_url,
+        "expiresAt": expires_at,
+        "sessionId": seed["session"]["id"],
+        "seedHash": digest,
+        "roundNumber": seed["round"]["number"],
+        "imageVerification": {
+            "scope": image_verification.get("scope", "currentRound"),
+            "images": image_verification.get("images", 0),
+            "uniqueImages": image_verification.get("uniqueImages", 0),
+        },
+        "timingsMs": {
+            "validation": validation_ms,
+            "imageVerification": image_verification_ms,
+            "sitePublication": site_publication_ms,
+            "total": total_ms,
+        },
+    }
 
 
 def inspect_continuation(value: dict[str, Any]) -> dict[str, Any]:
@@ -723,7 +835,7 @@ def main(argv: list[str]) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     validate_parser = subparsers.add_parser("validate", help="validate a seed JSON file")
     validate_parser.add_argument("seed", type=Path)
-    verify_images_parser = subparsers.add_parser("verify-images", help="fetch and verify every seed image URL")
+    verify_images_parser = subparsers.add_parser("verify-images", help="fetch and verify current-round image URLs")
     verify_images_parser.add_argument("seed", type=Path)
     verify_images_parser.add_argument("--timeout", type=float, default=15, help="per-image network timeout in seconds")
     inspect_parser = subparsers.add_parser("inspect-continuation", help="validate and summarize a continuation package")
