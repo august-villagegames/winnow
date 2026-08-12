@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate, compile, and anonymously publish Portable Winnow v3 sessions."""
+"""Validate, compile, and anonymously publish Portable Winnow v4 sessions."""
 
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ from typing import Any, Iterable
 
 
 PROTOCOL = "winnow.portable-session"
-SCHEMA_VERSION = 3
-RUNTIME_VERSION = "3.0.2"
+SCHEMA_VERSION = 4
+RUNTIME_VERSION = "4.0.0"
 CONTINUATION_PROTOCOL = "winnow.continuation"
 PUBLISH_ENDPOINT = "https://here.now/api/v1/publish"
 CONTENT_TYPE = "text/html; charset=utf-8"
@@ -43,6 +43,7 @@ ICONS_TOKEN = "__WINNOW_ICONS__"
 FONT_TOKEN = "__WINNOW_FONT_DATA__"
 IMAGE_MAX_BYTES = 8 * 1024 * 1024
 IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
+MAX_PROFILE_PATTERNS = 6
 
 
 class ValidationError(ValueError):
@@ -150,6 +151,72 @@ def _string_array(value: Any, path: str, *, min_items: int = 0, max_items: int |
 
 def _validate_profile_exclusions(value: Any, path: str) -> list[str]:
     return _string_array(value, path, max_length=500)
+
+
+def _normalize_profile_value(value: Any) -> str | bool | None:
+    if isinstance(value, str):
+        return " ".join(unicodedata.normalize("NFKC", value).strip().split()).lower()
+    if isinstance(value, bool):
+        return value
+    return None
+
+
+def _profile_pattern_key(factor_id: str, polarity: str, direction: str, value: Any) -> str:
+    return canonical_json({"factorId": factor_id, "polarity": polarity, "direction": direction, "value": _normalize_profile_value(value)}).decode("utf-8")
+
+
+def _validate_profile_patterns(value: Any, path: str, rounds: list[dict[str, Any]], exclusions: list[str]) -> list[dict[str, Any]]:
+    patterns = _array(value, path)
+    if len(patterns) > MAX_PROFILE_PATTERNS:
+        raise ValidationError([f"{path}: allows at most {MAX_PROFILE_PATTERNS} patterns"])
+    factors = {factor["id"]: factor for round_value in rounds for factor in round_value["factors"]}
+    seen: set[str] = set()
+    for index, raw in enumerate(patterns):
+        pattern_path = f"{path}[{index}]"
+        pattern = _object(raw, pattern_path, {"key", "factorId", "polarity", "direction", "value", "mean", "supportCount", "strength"})
+        key = _plain(_required(pattern, "key", pattern_path), f"{pattern_path}.key", max_length=500)
+        factor_id = _id(_required(pattern, "factorId", pattern_path), f"{pattern_path}.factorId")
+        factor = factors.get(factor_id)
+        if factor is None:
+            raise ValidationError([f"{pattern_path}.factorId: undeclared factor"])
+        polarity = _required(pattern, "polarity", pattern_path)
+        if polarity not in {"like", "dislike"}:
+            raise ValidationError([f"{pattern_path}.polarity: invalid polarity"])
+        direction = _required(pattern, "direction", pattern_path)
+        raw_value = _required(pattern, "value", pattern_path)
+        mean = _required(pattern, "mean", pattern_path)
+        support_count = _required(pattern, "supportCount", pattern_path)
+        strength = _required(pattern, "strength", pattern_path)
+        if not isinstance(support_count, int) or isinstance(support_count, bool) or support_count < 2:
+            raise ValidationError([f"{pattern_path}.supportCount: expected an integer >= 2"])
+        if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not math.isfinite(strength) or not 0 <= strength <= 1:
+            raise ValidationError([f"{pattern_path}.strength: expected a finite number from 0 to 1"])
+        if _profile_pattern_key(factor_id, polarity, direction, raw_value) != key:
+            raise ValidationError([f"{pattern_path}.key: does not match the canonical pattern identity"])
+        if key in seen:
+            raise ValidationError([f"{pattern_path}.key: duplicate pattern key"])
+        if key in exclusions:
+            raise ValidationError([f"{pattern_path}.key: excluded patterns cannot be active"])
+        seen.add(key)
+        factor_type = factor["valueType"]
+        if factor_type == "number":
+            if direction not in {"lower", "higher", "average"} or raw_value is not None:
+                raise ValidationError([f"{pattern_path}: invalid numeric pattern shape"])
+            if direction == "average":
+                if isinstance(mean, bool) or not isinstance(mean, (int, float)) or not math.isfinite(mean):
+                    raise ValidationError([f"{pattern_path}.mean: expected a finite number for an average pattern"])
+            elif mean is not None:
+                raise ValidationError([f"{pattern_path}.mean: must be null for a directional pattern"])
+        elif factor_type == "boolean":
+            if direction not in {"include", "exclude"} or not isinstance(raw_value, bool) or mean is not None:
+                raise ValidationError([f"{pattern_path}: invalid boolean pattern shape"])
+        elif factor_type == "category":
+            if direction != "include" or not isinstance(raw_value, str) or not raw_value.strip() or mean is not None:
+                raise ValidationError([f"{pattern_path}: invalid category pattern shape"])
+            _plain(raw_value, f"{pattern_path}.value", max_length=400)
+        else:
+            raise ValidationError([f"{pattern_path}: patterns are not supported for text factors"])
+    return patterns
 
 
 def _validate_display(factor: dict[str, Any], path: str) -> dict[str, Any]:
@@ -413,7 +480,7 @@ def _validate_image_policy(rounds: list[dict[str, Any]], session: dict[str, Any]
 
 
 def validate_seed(seed: Any) -> dict[str, Any]:
-    root = _object(seed, "seed", {"protocol", "schemaVersion", "runtimeVersion", "session", "profileExclusions", "history", "round"})
+    root = _object(seed, "seed", {"protocol", "schemaVersion", "runtimeVersion", "session", "profileExclusions", "profilePatterns", "history", "round"})
     if root.get("protocol") != PROTOCOL:
         raise ValidationError(["seed.protocol: unsupported protocol"])
     if root.get("schemaVersion") != SCHEMA_VERSION:
@@ -425,13 +492,15 @@ def validate_seed(seed: Any) -> dict[str, Any]:
     history_raw = _array(_required(root, "history", "seed"), "seed.history")
     history = [_validate_round(value, index + 1, True, f"seed.history[{index}]") for index, value in enumerate(history_raw)]
     current = _validate_round(_required(root, "round", "seed"), len(history) + 1, False, "seed.round")
-    _validate_round_lineage([*history, current], session)
-    _validate_image_policy([*history, current], session)
+    rounds = [*history, current]
+    _validate_round_lineage(rounds, session)
+    _validate_image_policy(rounds, session)
+    _validate_profile_patterns(_required(root, "profilePatterns", "seed"), "seed.profilePatterns", rounds, root["profileExclusions"])
     return root
 
 
 def validate_continuation(value: Any) -> dict[str, Any]:
-    root = _object(value, "continuation", {"protocol", "schemaVersion", "parent", "session", "parentProfileExclusions", "profileExclusions", "completedRounds", "nextRoundNumber"})
+    root = _object(value, "continuation", {"protocol", "schemaVersion", "parent", "session", "parentProfilePatterns", "parentProfileExclusions", "profilePatterns", "profileExclusions", "completedRounds", "nextRoundNumber"})
     if root.get("protocol") != CONTINUATION_PROTOCOL:
         raise ValidationError(["continuation.protocol: unsupported protocol"])
     if root.get("schemaVersion") != SCHEMA_VERSION:
@@ -444,8 +513,9 @@ def validate_continuation(value: Any) -> dict[str, Any]:
         raise ValidationError(["continuation.parent.seedHash: expected a SHA-256 hash"])
     _https(_required(parent, "url", "continuation.parent"), "continuation.parent.url")
     session = _validate_session(_required(root, "session", "continuation"), "continuation.session")
+    parent_profile_patterns_raw = _required(root, "parentProfilePatterns", "continuation")
     parent_profile_exclusions = _validate_profile_exclusions(_required(root, "parentProfileExclusions", "continuation"), "continuation.parentProfileExclusions")
-    _validate_profile_exclusions(_required(root, "profileExclusions", "continuation"), "continuation.profileExclusions")
+    profile_exclusions = _validate_profile_exclusions(_required(root, "profileExclusions", "continuation"), "continuation.profileExclusions")
     completed_raw = _array(_required(root, "completedRounds", "continuation"), "continuation.completedRounds")
     if len(completed_raw) != parent["roundNumber"]:
         raise ValidationError(["continuation.completedRounds: does not match parent round number"])
@@ -457,8 +527,10 @@ def validate_continuation(value: Any) -> dict[str, Any]:
         raise ValidationError(["continuation.parent.sessionId: does not match continuation.session.id"])
     _validate_round_lineage(completed, session)
     _validate_image_policy(completed, session)
+    _validate_profile_patterns(parent_profile_patterns_raw, "continuation.parentProfilePatterns", completed, parent_profile_exclusions)
+    _validate_profile_patterns(_required(root, "profilePatterns", "continuation"), "continuation.profilePatterns", completed, profile_exclusions)
     parent_round = {key: value for key, value in completed[-1].items() if key != "verdicts"}
-    parent_seed = {"protocol": PROTOCOL, "schemaVersion": SCHEMA_VERSION, "runtimeVersion": RUNTIME_VERSION, "session": session, "profileExclusions": parent_profile_exclusions, "history": completed[:-1], "round": parent_round}
+    parent_seed = {"protocol": PROTOCOL, "schemaVersion": SCHEMA_VERSION, "runtimeVersion": RUNTIME_VERSION, "session": session, "profileExclusions": parent_profile_exclusions, "profilePatterns": parent_profile_patterns_raw, "history": completed[:-1], "round": parent_round}
     if seed_hash(parent_seed) != parent["seedHash"]:
         raise ValidationError(["continuation.parent.seedHash: does not match the completed parent seed"])
     return root
@@ -471,6 +543,8 @@ def validate_successor(continuation: Any, next_seed: Any) -> dict[str, Any]:
         raise ValidationError(["successor.session: immutable session fields changed"])
     if canonical_json(next_seed["history"]) != canonical_json(continuation["completedRounds"]):
         raise ValidationError(["successor.history: completed rounds changed or are missing"])
+    if canonical_json(next_seed["profilePatterns"]) != canonical_json(continuation["profilePatterns"]):
+        raise ValidationError(["successor.profilePatterns: current profile patterns changed or are missing"])
     if canonical_json(next_seed["profileExclusions"]) != canonical_json(continuation["profileExclusions"]):
         raise ValidationError(["successor.profileExclusions: current profile exclusions changed or are missing"])
     if next_seed["round"]["number"] != continuation["nextRoundNumber"]:
@@ -831,7 +905,7 @@ def inspect_continuation(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Portable Winnow v3 compiler and anonymous here.now publisher")
+    parser = argparse.ArgumentParser(description="Portable Winnow v4 compiler and anonymous here.now publisher")
     subparsers = parser.add_subparsers(dest="command", required=True)
     validate_parser = subparsers.add_parser("validate", help="validate a seed JSON file")
     validate_parser.add_argument("seed", type=Path)

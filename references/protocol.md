@@ -1,4 +1,4 @@
-# Portable Winnow v3 protocol
+# Portable Winnow v4 protocol
 
 Portable Winnow is a strict, immutable session seed compiled in memory into one
 self-contained `index.html`, then uploaded to an anonymous hosted Site. The
@@ -12,8 +12,8 @@ session, round, source, option, and verdict evidence defined by
 ```json
 {
   "protocol": "winnow.portable-session",
-  "schemaVersion": 3,
-  "runtimeVersion": "3.0.2",
+  "schemaVersion": 4,
+  "runtimeVersion": "4.0.0",
   "session": {
     "id": "session-id",
     "title": "Durable couch under $2,000",
@@ -23,6 +23,7 @@ session, round, source, option, and verdict evidence defined by
     "imagePolicy": {"mode": "required"}
   },
   "profileExclusions": [],
+  "profilePatterns": [],
   "history": [],
   "round": {"number": 1, "generatedAt": "…", "factors": [], "sources": [], "options": []}
 }
@@ -36,10 +37,21 @@ round and is rendered only in the large value slot. Reused factor IDs retain
 the same label, value type, and display definition. Option IDs, normalized
 titles, and canonical option URLs cannot be reused anywhere in a session.
 
+The standard JSON Schema expresses the record shape and array limit. The
+repository validator (`scripts/winnow.py`) is the enforcing validation path for
+cross-record invariants that standard JSON Schema cannot express, including
+unique `profilePattern.key` values and conflicts with `profileExclusions`.
+
 `profileExclusions` is a runtime-owned array of opaque profile-pattern keys.
 It starts empty. The runtime uses it to remember insights the user has removed
 from future-round guidance; it does not change verdict history or whether the
 primary factor appears in later rounds.
+
+`profilePatterns` is a runtime-owned array of at most six active pattern records.
+Each record stores its canonical key, factor identity, polarity, direction,
+semantic value, optional numeric mean, support count, and strength. Persisted
+patterns keep their slots ahead of newly inferred candidates. A pattern is
+removed from this array only by an explicit user dismissal.
 
 Every session declares an image policy. Use `{"mode":"required"}` by default:
 each option in every round must provide at least one source-backed image. Use
@@ -87,10 +99,12 @@ The runtime copies the immutable session and completed rounds into:
 ```json
 {
   "protocol": "winnow.continuation",
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "parent": {"sessionId":"session-id","roundNumber":1,"seedHash":"sha256","url":"https://example.here.now/"},
   "session": {},
+  "parentProfilePatterns": [],
   "parentProfileExclusions": [],
+  "profilePatterns": [],
   "profileExclusions": [],
   "completedRounds": [],
   "nextRoundNumber": 2
@@ -105,9 +119,11 @@ explicitly prohibits preference inference from history. The package never
 renders in the page and never contains weights, hidden ranking fields,
 source-page instructions, or a claim token.
 
-`parentProfileExclusions` exactly records the exclusions embedded in the
-hashed parent seed. `profileExclusions` records the user’s latest selection.
-A successor must copy the latter exactly into its root `profileExclusions`;
+`parentProfilePatterns` and `parentProfileExclusions` exactly record the
+pattern and exclusion state embedded in the hashed parent seed.
+`profilePatterns` and `profileExclusions` record the user’s latest selection.
+A successor must copy both current fields exactly into its root
+`profilePatterns` and `profileExclusions`;
 the runtime will record that successor value as the next parent snapshot. A
 successor must preserve the session byte-for-byte after canonical JSON
 normalization and copy `completedRounds` exactly into `history`; it may evolve
@@ -159,15 +175,18 @@ the first unrated option after reload. Left/right reactions mean dislike/like;
 upward swipe, `ArrowUp`, or `S` means skip. Reactions are final and the
 completed round automatically becomes a summary.
 
-The local profile combines all reacted options across history and the current
-round. Likes and dislikes are evaluated independently, and a profile pattern
-requires at least two supporting selections of the same polarity. Boolean and
-category patterns require a frequency difference of at least 0.25 when both
-polarities have evidence; numeric patterns use a counted average when only one
-polarity has enough evidence and retain a directional trend when both sides
-provide a strong contrast. Skips and free-text factors do not create patterns.
-The runtime sorts patterns by support count and strength, shows at most six,
-and otherwise shows the contrast-needed message. The summary renders each
-pattern as a compact pill with its support count. Removing a pill excludes only
-that same factor, polarity, direction, and semantic value from future guidance;
-it stays visibly restorable while the current evidence still supports it.
+The local profile infers candidates from all reacted options across history and
+the current round. Likes and dislikes are evaluated independently, and a
+profile pattern requires at least two supporting selections of the same
+polarity. Boolean and category patterns require a frequency difference of at
+least 0.25 when both polarities have evidence; numeric patterns use a counted
+average when only one polarity has enough evidence and retain a directional
+trend when both sides provide a strong contrast. Skips and free-text factors do
+not create candidates.
+
+Persisted active patterns retain priority in the six available profile slots;
+new candidates fill only remaining slots. A persisted pattern remains in the
+profile even when the current evidence no longer produces it. The summary
+renders each active pattern as a compact pill with its support count. Removing
+a pill excludes only that same factor, polarity, direction, and semantic value
+from future guidance; the current summary keeps it available for restoration.

@@ -15,6 +15,7 @@ SPEC = importlib.util.spec_from_file_location("portable_winnow", ROOT / "scripts
 assert SPEC and SPEC.loader
 winnow = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(winnow)
+SCHEMA = json.loads((ROOT / "references" / "seed.schema.json").read_text(encoding="utf-8"))
 
 
 def fixture(name: str = "synthetic-seed.json") -> dict:
@@ -78,12 +79,17 @@ class RepositoryChecks(unittest.TestCase):
         claude = (ROOT / ".claude" / "skills" / "winnow" / "SKILL.md").read_bytes()
         self.assertEqual(claude, canonical, "Claude and agent Winnow skills must stay byte-for-byte identical")
 
+    def test_schema_declares_winnow_key_uniqueness_boundary(self):
+        profile_patterns = SCHEMA["$defs"]["profilePatterns"]
+        self.assertEqual(profile_patterns["x-winnow-uniqueItemsBy"], "key")
+        self.assertIn("standard JSON Schema uniqueItems keyword", profile_patterns["$comment"])
+
 
 class ProtocolTests(unittest.TestCase):
     def test_valid_round_one(self):
         seed = fixture()
         self.assertIs(winnow.validate_seed(seed), seed)
-        self.assertEqual(seed["schemaVersion"], 3)
+        self.assertEqual(seed["schemaVersion"], 4)
         self.assertEqual(len(seed["round"]["options"]), 6)
 
     def test_valid_round_two_continuation_and_successor(self):
@@ -133,6 +139,74 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_continuation(continuation)
 
+    def test_profile_patterns_are_required_and_propagate_to_successors(self):
+        seed = fixture()
+        seed.pop("profilePatterns")
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
+        for field in ["parentProfilePatterns", "profilePatterns"]:
+            with self.subTest(field=field):
+                continuation = fixture("synthetic-continuation.json")
+                continuation.pop(field)
+                with self.assertRaises(winnow.ValidationError):
+                    winnow.validate_continuation(continuation)
+
+        continuation = fixture("synthetic-continuation.json")
+        successor = fixture("synthetic-successor-seed.json")
+        successor["profilePatterns"] = []
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_successor(continuation, successor)
+
+        continuation = fixture("synthetic-continuation.json")
+        continuation["profilePatterns"][0]["mean"] = 123
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_continuation(continuation)
+
+        pattern = fixture("synthetic-continuation.json")["profilePatterns"][0]
+        for invalid in [
+            [{**pattern, "key": "not-canonical"}],
+            [pattern, copy.deepcopy(pattern)],
+            [pattern] * 7,
+            [{**pattern, "factorId": "undeclared"}],
+            [{**pattern, "direction": "lower"}],
+            [{**pattern, "value": True}],
+            [{**pattern, "mean": 1}],
+        ]:
+            with self.subTest(invalid=invalid):
+                seed = fixture()
+                seed["profilePatterns"] = invalid
+                with self.assertRaises(winnow.ValidationError):
+                    winnow.validate_seed(seed)
+
+        numeric = {
+            "key": winnow._profile_pattern_key("price", "like", "average", None),
+            "factorId": "price",
+            "polarity": "like",
+            "direction": "average",
+            "value": None,
+            "mean": 1870,
+            "supportCount": 2,
+            "strength": 1,
+        }
+        for invalid in [
+            {**numeric, "direction": "include", "key": winnow._profile_pattern_key("price", "like", "include", None)},
+            {**numeric, "value": 1870, "key": winnow._profile_pattern_key("price", "like", "average", 1870)},
+            {**numeric, "mean": None},
+            {**numeric, "direction": "higher", "key": winnow._profile_pattern_key("price", "like", "higher", None), "mean": 1870},
+        ]:
+            with self.subTest(invalid=invalid):
+                seed = fixture()
+                seed["profilePatterns"] = [invalid]
+                with self.assertRaises(winnow.ValidationError):
+                    winnow.validate_seed(seed)
+
+        seed = fixture()
+        seed["profilePatterns"] = [pattern]
+        seed["profileExclusions"] = [pattern["key"]]
+        with self.assertRaises(winnow.ValidationError):
+            winnow.validate_seed(seed)
+
     def test_unknown_keys_are_rejected_at_every_protocol_level(self):
         cases = [
             (lambda value: value.update({"extra": True})),
@@ -156,6 +230,7 @@ class ProtocolTests(unittest.TestCase):
             lambda value: value["session"].update({"extra": True}),
             lambda value: value["completedRounds"][0].update({"extra": True}),
             lambda value: value["completedRounds"][0]["verdicts"][0].update({"extra": True}),
+            lambda value: value["profilePatterns"][0].update({"extra": True}),
         ]
         for mutate in continuation_cases:
             with self.subTest(mutate=mutate):
@@ -662,7 +737,7 @@ class PublisherTests(unittest.TestCase):
         expected = {
             "session": "synthetic-sofa-session",
             "seed": "a" * 64,
-            "runtime": "3.0.2",
+            "runtime": "4.0.0",
             "expires": "2026-08-12T12:00:00.000Z",
         }
 
@@ -745,7 +820,7 @@ class PublisherTests(unittest.TestCase):
                     "http://mock.here.now/site",
                     "synthetic-sofa-session",
                     "a" * 64,
-                    "3.0.2",
+                    "4.0.0",
                     "2026-08-12T12:00:00.000Z",
                 )
         request.assert_not_called()

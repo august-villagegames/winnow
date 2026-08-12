@@ -1,6 +1,6 @@
-# Portable Winnow v3
+# Portable Winnow v4
 
-Portable Winnow compiles a strict v3 comparison seed in memory and publishes
+Portable Winnow compiles a strict v4 comparison seed in memory and publishes
 one self-contained page to an anonymous hosted Site. A local HTML file is never
 a supported deliverable. Later rounds are researched from a copied continuation
 package and published to new anonymous URLs.
@@ -67,7 +67,8 @@ images add materially distinct, decision-relevant evidence. Use
 non-visual decision.
 
 The runtime owns layout, interactions, ordering, profile logic, and continuation
-construction. Do not add runtime network calls, agent-authored presentation,
+construction. Profile patterns are runtime-generated and carried explicitly in
+the v4 seed/continuation state; do not add runtime network calls, agent-authored presentation,
 hidden candidates, ranking weights, raw source HTML, credentials, or
 continuation JSON to a seed. The hosted URL is the deliverable.
 

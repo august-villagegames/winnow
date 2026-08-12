@@ -1,10 +1,10 @@
 {
   "protocol": "winnow.continuation",
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "parent": {
     "sessionId": "synthetic-sofa-session",
     "roundNumber": 1,
-    "seedHash": "345c9aa95be329f2458a83635f7303832d4a2152cd78464f440182bd0587c5ea",
+    "seedHash": "fe80210e03a46ebcd9c656d436fe39ab039f5d434a8d0bf07375a3f1a3d7e5c5",
     "url": "https://example.here.now/synthetic-sofa-round-1"
   },
   "session": {
@@ -15,8 +15,21 @@
     "primaryFactorId": "price",
     "imagePolicy": {"mode": "required"}
   },
+  "parentProfilePatterns": [],
   "parentProfileExclusions": [],
   "profileExclusions": [],
+  "profilePatterns": [
+    {
+      "key": "{\"direction\":\"include\",\"factorId\":\"seats\",\"polarity\":\"like\",\"value\":\"3-seat\"}",
+      "factorId": "seats",
+      "polarity": "like",
+      "direction": "include",
+      "value": "3-seat",
+      "mean": null,
+      "supportCount": 3,
+      "strength": 1
+    }
+  ],
   "completedRounds": [
     {
       "number": 1,
