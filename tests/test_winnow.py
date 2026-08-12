@@ -604,6 +604,7 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(result["imageVerification"], {"scope": "currentRound", "images": 6, "uniqueImages": 6})
         self.assertTrue(all(isinstance(value, int) and value >= 0 for value in result["timingsMs"].values()))
         self.assertNotIn("claimToken", json.dumps(result))
+        self.assertEqual(len(uploaded), 1)
         self.assertIn(b"content=\"2026-08-09T12:00:00.000Z\"", uploaded[0])
         self.assertEqual([method for method, _url, _body, _headers in requests], ["POST", "PUT", "POST", "GET"])
         for _method, _url, _body, headers in requests:

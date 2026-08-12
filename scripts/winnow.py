@@ -628,35 +628,32 @@ def _fetch_image(url: str, *, timeout: float = 15) -> dict[str, Any]:
         raise ValueError(f"network error ({type(exc).__name__})") from None
 
 
-def _verify_current_image_urls(seed: dict[str, Any], manifest: list[dict[str, str]], *, timeout: float) -> list[dict[str, Any]]:
+def _verify_current_image_urls(manifest: list[dict[str, str]], *, timeout: float) -> list[dict[str, Any]]:
     references: dict[str, list[str]] = {}
     for item in manifest:
         references.setdefault(item["url"], []).append(item["path"])
     unique_urls = list(references)
     if not unique_urls:
         return []
-    errors: list[str] = []
+    errors: list[tuple[int, str]] = []
     verified: list[dict[str, Any] | None] = [None] * len(unique_urls)
 
-    def fetch(url: str) -> dict[str, Any]:
-        result = _fetch_image(url, timeout=timeout)
-        if not isinstance(result, dict):
-            raise ValueError("invalid image verification result")
-        return dict(result)
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(unique_urls))) as executor:
-        futures = {executor.submit(fetch, url): index for index, url in enumerate(unique_urls)}
+        futures = {executor.submit(_fetch_image, url, timeout=timeout): index for index, url in enumerate(unique_urls)}
         for future in concurrent.futures.as_completed(futures):
             index = futures[future]
             url = unique_urls[index]
             paths = references[url]
             try:
-                verified[index] = future.result()
+                result = future.result()
+                if not isinstance(result, dict):
+                    raise ValueError("invalid image verification result")
+                verified[index] = dict(result)
             except (ValueError, ValidationError) as exc:
-                errors.append(f"{index}: {', '.join(paths)}: {exc}")
+                errors.append((index, f"{', '.join(paths)}: {exc}"))
     if errors:
-        errors.sort(key=lambda error: int(error.split(":", 1)[0]))
-        raise ValidationError([f"image verification failed: {error.split(': ', 1)[1]}" for error in errors])
+        errors.sort(key=lambda error: error[0])
+        raise ValidationError([f"image verification failed: {message}" for _index, message in errors])
     return [result for result in verified if result is not None]
 
 
@@ -676,7 +673,7 @@ def verify_image_urls(
     }
     if not current_manifest:
         return {**result_base, "verified": []}
-    verified = _verify_current_image_urls(seed, current_manifest, timeout=timeout)
+    verified = _verify_current_image_urls(current_manifest, timeout=timeout)
     return {**result_base, "verified": verified}
 
 
@@ -769,6 +766,7 @@ def publish(
         validate_successor(continuation, seed)
     elif continuation is not None:
         validate_successor(continuation, seed)
+    digest = seed_hash(seed)
     validation_ms = _elapsed_ms(validation_started)
     image_started = time.monotonic()
     image_verification = verify_image_urls(seed)
@@ -799,7 +797,7 @@ def publish(
     _fetch_live(
         site_url,
         seed["session"]["id"],
-        seed_hash(seed),
+        digest,
         RUNTIME_VERSION,
         _utc_expiration(expires_at),
         allow_http=allow_http_test,
@@ -810,7 +808,7 @@ def publish(
         "siteUrl": site_url,
         "expiresAt": expires_at,
         "sessionId": seed["session"]["id"],
-        "seedHash": seed_hash(seed),
+        "seedHash": digest,
         "roundNumber": seed["round"]["number"],
         "imageVerification": {
             "scope": image_verification.get("scope", "currentRound"),
