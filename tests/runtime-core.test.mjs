@@ -198,3 +198,17 @@ test("continuation handoff uses selected profile guidance and keeps the controls
   assert.match(runtimeUi, /No profile patterns are selected for the next round/);
   assert.match(runtimeUi, /profileExclusions/);
 });
+
+test("image viewer keeps the existing carousel and uses accessible viewer hooks", () => {
+  assert.match(runtimeUi, /data-viewer-open/);
+  assert.match(runtimeUi, /data-image-viewer/);
+  assert.match(runtimeUi, /data-viewer-image/);
+  assert.match(runtimeUi, /data-viewer-prev/);
+  assert.match(runtimeUi, /data-viewer-next/);
+  assert.match(runtimeUi, /data-viewer-close/);
+  assert.match(runtimeUi, /data-carousel-index/);
+  assert.match(runtimeUi, /showModal\(\)/);
+  assert.match(runtimeUi, /event\.key === "Escape"|cancel/);
+  assert.match(runtimeUi, /data-carousel/);
+  assert.match(runtimeUi, /referrerpolicy="no-referrer"/);
+});

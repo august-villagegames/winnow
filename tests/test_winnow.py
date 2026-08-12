@@ -609,7 +609,19 @@ class ProtocolTests(unittest.TestCase):
         ]
         html = winnow.build_html(seed).decode("utf-8")
         self.assertIn("data-carousel", html)
+        self.assertIn("data-viewer-open", html)
+        self.assertIn("data-image-viewer", html)
+        self.assertIn("data-viewer-prev", html)
+        self.assertIn("data-viewer-next", html)
+        self.assertIn("data-viewer-close", html)
         self.assertIn(winnow.seed_hash(seed), html)
+
+    def test_build_compiles_viewer_for_singular_image(self):
+        html = winnow.build_html(fixture()).decode("utf-8")
+        self.assertIn("data-viewer-open", html)
+        self.assertIn("data-viewer-image", html)
+        self.assertIn("object-fit: contain", html)
+        self.assertNotIn("__WINNOW_", html)
 
     def test_later_round_publish_requires_continuation(self):
         with self.assertRaises(winnow.ValidationError):

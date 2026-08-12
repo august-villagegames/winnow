@@ -202,6 +202,25 @@ a { color: inherit; }
   border-radius: 8px;
 }
 
+.image-viewer-trigger {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  cursor: zoom-in;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  touch-action: pan-y;
+}
+
+.image-viewer-trigger:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -3px;
+}
+
 .carousel-slide {
   display: none;
   width: 100%;
@@ -213,6 +232,7 @@ a { color: inherit; }
 
 .carousel-controls {
   position: absolute;
+  z-index: 2;
   inset: 0;
   pointer-events: none;
 }
@@ -257,12 +277,14 @@ a { color: inherit; }
 
 .carousel-dots {
   position: absolute;
+  z-index: 2;
   right: 0;
   bottom: 7px;
   left: 0;
   display: flex;
   justify-content: center;
   gap: 4px;
+  pointer-events: none;
 }
 
 .carousel-dot {
@@ -275,6 +297,121 @@ a { color: inherit; }
 }
 
 .carousel-dot.is-active { background: #fff; }
+
+.carousel-dots .carousel-dot { pointer-events: auto; }
+
+.image-viewer {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  color: #fff;
+  background: transparent;
+  border: 0;
+}
+
+.image-viewer::backdrop { background: rgba(26, 26, 26, .86); }
+
+.image-viewer-panel {
+  position: relative;
+  display: flex;
+  width: min(100%, 900px);
+  height: 100%;
+  min-height: 0;
+  margin: auto;
+  padding: 20px 18px 18px;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.image-viewer-stage {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  touch-action: pan-y;
+}
+
+.viewer-image {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 100%;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.viewer-fallback {
+  width: min(100%, 420px);
+  height: min(100%, 260px);
+  min-height: 120px;
+  color: #fff;
+  background: rgba(250, 249, 246, .12);
+  border-radius: 8px;
+}
+
+.image-viewer-close {
+  position: absolute;
+  z-index: 2;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  color: #fff;
+  background: rgba(26, 26, 26, .72);
+  border: 1px solid rgba(255, 255, 255, .55);
+  border-radius: 50%;
+}
+
+.image-viewer-close svg { width: 16px; height: 16px; }
+
+.image-viewer-controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.image-viewer-arrow {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0 0 2px;
+  color: #fff;
+  background: rgba(26, 26, 26, .72);
+  border: 1px solid rgba(255, 255, 255, .55);
+  border-radius: 50%;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.image-viewer-counter {
+  min-width: 42px;
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-align: center;
+}
+
+.image-viewer-dots {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  gap: 5px;
+  padding-bottom: max(0px, env(safe-area-inset-bottom));
+}
+
+.image-viewer-dots .carousel-dot { pointer-events: auto; }
 
 .option-heading {
   display: flex;
