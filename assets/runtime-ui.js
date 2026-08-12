@@ -155,9 +155,29 @@
       </div>
       <div class="carousel-dots" data-carousel-dots>${images.map((_, imageIndex) => `<button class="carousel-dot${imageIndex === 0 ? " is-active" : ""}" type="button" data-carousel-dot="${imageIndex}" aria-label="Show image ${imageIndex + 1} of ${images.length}" aria-current="${imageIndex === 0 ? "true" : "false"}"></button>`).join("")}</div>` : "";
     return `<div class="image-carousel${multiple ? " has-controls" : " is-single"}" data-carousel aria-label="Images for ${escapeHtml(option.title)}">
-      <div class="carousel-viewport">${slides}</div>
+      <div class="carousel-viewport">${slides}<button class="image-viewer-trigger" type="button" data-viewer-open aria-label="View images for ${escapeHtml(option.title)} full size"></button></div>
       ${controls}
     </div>`;
+  }
+
+  function renderImageViewer(option) {
+    const images = optionImages(option);
+    if (!images.length) return "";
+    return `<dialog class="image-viewer" data-image-viewer aria-label="Image viewer for ${escapeHtml(option.title)}">
+      <div class="image-viewer-panel">
+        <button class="image-viewer-close" type="button" data-viewer-close aria-label="Close image viewer">${icon("x")}</button>
+        <div class="image-viewer-stage" data-viewer-stage>
+          <img class="viewer-image" data-viewer-image alt="" referrerpolicy="no-referrer">
+          <span class="image-fallback viewer-fallback" data-viewer-fallback hidden>Image unavailable</span>
+        </div>
+        <div class="image-viewer-controls" data-viewer-controls>
+          <button class="image-viewer-arrow" type="button" data-viewer-prev aria-label="Previous image">‹</button>
+          <span class="image-viewer-counter" data-viewer-counter aria-live="polite">1 / ${images.length}</span>
+          <button class="image-viewer-arrow" type="button" data-viewer-next aria-label="Next image">›</button>
+        </div>
+        <div class="image-viewer-dots" data-viewer-dots>${images.map((_, imageIndex) => `<button class="carousel-dot${imageIndex === 0 ? " is-active" : ""}" type="button" data-viewer-dot="${imageIndex}" aria-label="Show full-size image ${imageIndex + 1} of ${images.length}" aria-current="${imageIndex === 0 ? "true" : "false"}"></button>`).join("")}</div>
+      </div>
+    </dialog>`;
   }
 
   function renderCard(option, index) {
@@ -201,9 +221,11 @@
       <button class="skip-button sr-only" type="button" data-decision="skip">Skip</button>
       <p class="sr-only">Swipe left to dislike, right to like, or up to skip. Keyboard shortcuts: left arrow to dislike, right arrow to like, S or up arrow to skip.</p>
       <div id="winnow-live" class="sr-only" aria-live="polite">${escapeHtml(persistenceWarning)}</div>
+      ${renderImageViewer(option)}
     </section>`;
     const surface = app.querySelector("[data-card-surface]");
     bindCarousels();
+    bindImageViewer(option);
     app.querySelectorAll("[data-decision]").forEach((button) => button.addEventListener("click", () => commit(button.dataset.decision, button.dataset.decision === "like" ? "right" : button.dataset.decision === "dislike" ? "left" : "up")));
     attachGestures(surface);
     bindImageFallbacks();
@@ -231,6 +253,7 @@
           return;
         }
         current = ((nextIndex % currentSlides.length) + currentSlides.length) % currentSlides.length;
+        carousel.setAttribute("data-carousel-index", String(current));
         currentSlides.forEach((slide, index) => {
           const active = index === current;
           slide.classList.toggle("is-active", active);
@@ -266,11 +289,105 @@
         const delta = event.clientX - pointerStartX;
         pointerStartX = null;
         event.stopPropagation();
-        if (Math.abs(delta) >= 40) move(delta < 0 ? 1 : -1);
+        if (Math.abs(delta) >= 40) {
+          carousel.dataset.carouselSuppressClick = "true";
+          window.setTimeout(() => delete carousel.dataset.carouselSuppressClick, 350);
+          move(delta < 0 ? 1 : -1);
+        }
       });
       carousel.addEventListener("pointercancel", () => { pointerStartX = null; });
       update(0);
     });
+  }
+
+  function bindImageViewer(option) {
+    const images = optionImages(option);
+    const carousel = app.querySelector("[data-carousel]");
+    const dialog = app.querySelector("[data-image-viewer]");
+    if (!images.length || !carousel || !dialog || typeof dialog.showModal !== "function") return;
+    const trigger = carousel.querySelector("[data-viewer-open]");
+    const image = dialog.querySelector("[data-viewer-image]");
+    const fallback = dialog.querySelector("[data-viewer-fallback]");
+    const stage = dialog.querySelector("[data-viewer-stage]");
+    const controls = dialog.querySelector("[data-viewer-controls]");
+    const counter = dialog.querySelector("[data-viewer-counter]");
+    const viewerDots = dialog.querySelector("[data-viewer-dots]");
+    const dots = [...dialog.querySelectorAll("[data-viewer-dot]")];
+    if (!trigger || !image || !fallback || !stage || !controls || !counter || !viewerDots) return;
+
+    let current = 0;
+    let returnFocus = null;
+    let pointerStartX = null;
+
+    const update = (nextIndex) => {
+      current = ((nextIndex % images.length) + images.length) % images.length;
+      const activeImage = images[current];
+      image.hidden = false;
+      fallback.hidden = true;
+      image.removeAttribute("src");
+      image.src = activeImage.url;
+      image.alt = activeImage.alt;
+      counter.textContent = `${current + 1} / ${images.length}`;
+      dots.forEach((dot, index) => {
+        const active = index === current;
+        dot.classList.toggle("is-active", active);
+        dot.setAttribute("aria-current", String(active));
+      });
+      controls.hidden = images.length < 2;
+      viewerDots.hidden = images.length < 2;
+    };
+    const move = (offset) => update(current + offset);
+    const close = () => { if (dialog.open) dialog.close(); };
+    const open = () => {
+      if (carousel.dataset.carouselSuppressClick === "true") return;
+      returnFocus = trigger;
+      update(Number(carousel.getAttribute("data-carousel-index") || 0));
+      dialog.showModal();
+    };
+
+    trigger.addEventListener("click", open);
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
+    dialog.querySelector("[data-viewer-close]").addEventListener("click", close);
+    dialog.querySelector("[data-viewer-prev]").addEventListener("click", () => move(-1));
+    dialog.querySelector("[data-viewer-next]").addEventListener("click", () => move(1));
+    dots.forEach((dot) => dot.addEventListener("click", () => update(Number(dot.dataset.viewerDot))));
+    dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+    dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        move(event.key === "ArrowLeft" ? -1 : 1);
+      }
+    });
+    dialog.addEventListener("close", () => {
+      image.removeAttribute("src");
+      returnFocus?.focus();
+      returnFocus = null;
+    });
+    image.addEventListener("error", () => {
+      image.hidden = true;
+      fallback.hidden = false;
+      announce(`Image unavailable: ${image.alt || "this option"}.`);
+    });
+    stage.addEventListener("pointerdown", (event) => {
+      pointerStartX = event.clientX;
+      event.stopPropagation();
+    });
+    stage.addEventListener("pointerup", (event) => {
+      if (pointerStartX === null) return;
+      const delta = event.clientX - pointerStartX;
+      pointerStartX = null;
+      event.stopPropagation();
+      if (Math.abs(delta) >= 40) move(delta < 0 ? 1 : -1);
+    });
+    stage.addEventListener("pointercancel", () => { pointerStartX = null; });
+    controls.hidden = images.length < 2;
+    viewerDots.hidden = images.length < 2;
   }
 
   function miniCard(option, disliked) {
