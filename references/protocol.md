@@ -57,22 +57,22 @@ each image may use a different count across options, but a required-image
 session must include at least one for every option. An image's `sourceId`
 identifies the cited source page; the direct image URL may be hosted on a
 separate CDN and does not need to share the source page's hostname. Before a
-session is linked or published, every unique image URL in the active round
-must be fetched over HTTPS and verified as a successful, credential-free
-response with an allowed raster image content type (`image/png`, `image/jpeg`,
-`image/gif`, `image/webp`, or `image/avif`) whose bytes match the declared type
-and remain below the verifier's size limit. Redirects must remain HTTPS and
-the final response must not be HTML, JSON, empty, oversized, or a content-type
-mismatch. Images carried in completed history rounds were verified when their
-original rounds were published and are not refetched for a successor.
-`publish` runs this gate automatically; the separate `verify-images` command
-remains available as a diagnostic and may reuse a fresh receipt bound to the
-session and round. Receipts expire logically after 24 hours, and successful
-publication deletes the receipt; cache and cleanup failures never bypass fresh
-verification.
+session is linked or published, every unique image URL in the active round must
+pass a full HTTPS GET—not only a HEAD request. The final response must be 2xx
+and credential-free, use an allowed raster content type (`image/png`,
+`image/jpeg`, `image/gif`, `image/webp`, or `image/avif`), remain below the
+verifier's size limit, and contain bytes matching the declared type. Redirects
+must remain HTTPS; DNS, TLS, network, status, length, signature, and type
+failures block publication, as do HTML, JSON, empty, and oversized responses.
+Duplicate URLs within the active round are fetched once per invocation. Images
+carried in completed history rounds were verified with their original rounds
+and are not refetched for a successor.
 
-The response verifier checks the image response bytes and does not add runtime
-network calls or local media artifacts.
+`publish` runs a fresh active-round image check automatically on every
+invocation. The optional `verify-images` diagnostic also performs a fresh,
+independent check; it creates no state for a later publication attempt. The
+response verifier checks image bytes without adding runtime network calls or
+local media artifacts.
 
 ## History and continuation
 
@@ -115,13 +115,25 @@ only the non-primary factors and must research 4–6 entirely new options. It
 must retain the session image policy and collect verified images for every new
 option when the policy is `required`.
 
-Validate the workflow with optional diagnostics:
+The normal initial workflow is:
+
+```sh
+python3 scripts/winnow.py publish seed.json
+```
+
+For a later round, pass the copied continuation package:
+
+```sh
+python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
+```
+
+Use the other commands only as optional diagnostics:
 
 ```sh
 python3 scripts/winnow.py validate seed.json
+python3 scripts/winnow.py verify-images seed.json
 python3 scripts/winnow.py inspect-continuation continuation.json
 python3 scripts/winnow.py validate-successor continuation.json next-seed.json
-python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
 ```
 
 Publishing is the only delivery workflow. The publisher compiles the page in
@@ -130,9 +142,11 @@ local build step or create, open, attach, or return an HTML file or local file
 path. This keeps the renderer reusable if another hosted provider is added in
 the future. Before returning, it deterministically verifies the hosted page's
 exact session ID, seed hash, runtime version, and normalized expiration meta
-tags. Publish output retains the existing publication fields and adds current-
-round image counts/cache status plus non-negative `timingsMs` for validation,
-image verification, site publication, and total work.
+tags. This exact-marker check is the publication verification step; no
+browser-based visual QA is required. Publish output includes the existing
+publication fields, current-round image and unique-image counts, and
+non-negative `timingsMs` for validation, image verification, site publication,
+and total work.
 
 Round 1 may publish without a continuation. Later rounds require the matching
 continuation and are always published as a new anonymous HereNow URL.

@@ -1,120 +1,85 @@
 # Portable Winnow v3
 
-This directory is the isolated, zero-dependency Portable Winnow runtime. It
-compiles a strict v3 session seed into exactly one self-contained HTML page in
-memory, then publishes that page to an anonymous hosted Site. There is no
-supported local HTML artifact workflow. Only the current page's verdicts and
-profile selections are persisted in the browser; later rounds are researched
-and published by an agent from a copied continuation package.
+Portable Winnow compiles a strict v3 comparison seed in memory and publishes
+one self-contained page to an anonymous hosted Site. A local HTML file is never
+a supported deliverable. Later rounds are researched from a copied continuation
+package and published to new anonymous URLs.
 
 The canonical standalone repository is
 <https://github.com/august-villagegames/winnow>. This content is also kept at
 `portable-poc/` inside the full `winnow-dev` repository for integration work.
-The commands below assume this directory is the current working directory.
+Commands below assume this directory is the current working directory.
 
-## Local checks
+## Quick start
 
-The normal initial-round workflow is a single `publish` command. It compiles
-the page in memory, uploads it to HereNow, and deterministically verifies that
-the hosted page contains the exact session ID, seed hash, runtime version, and
-normalized expiration metadata.
+The normal initial-round workflow is one command:
 
 ```sh
 python3 scripts/winnow.py publish seed.json
 ```
 
-`validate` and `verify-images` remain available as optional diagnostics;
-`publish` validates the seed and verifies the current round’s images, reusing a
-fresh session/round-bound verification receipt when one exists. Receipts have
-a 24-hour logical TTL and are deleted after successful publication; cache or
-cleanup failures never bypass fresh verification.
+`publish` validates the seed, freshly verifies every unique image URL in the
+current round, compiles and uploads the page, and checks the hosted page for the
+exact session ID, seed hash, runtime version, and normalized expiration markers.
+Any image or hosted-marker failure blocks publication. Completed-round images
+are not network-refetched, and no browser-based visual QA is required.
 
-For the included synthetic fixture, the schema-only check is:
+`validate` and `verify-images` are optional diagnostics. Each `verify-images`
+invocation performs a fresh check; it does not create reusable state for
+`publish`.
 
 ```sh
 python3 scripts/winnow.py validate fixtures/synthetic-seed.json
+python3 scripts/winnow.py verify-images seed.json
 ```
 
-Its reserved `example.com` image URLs are intentionally not fetchable, so use
-a researched seed with real source-backed image URLs for `publish`. For a
-continuation, validate the copied package and successor before publishing a
-new anonymous URL:
+The included synthetic fixture uses reserved `example.com` image URLs, so it is
+suitable for schema and runtime tests but not image verification or publication.
+Use researched, direct, source-backed image URLs for a real session; an image
+may be hosted on a different CDN from its cited source page.
+
+For a later round, publish the successor with its copied continuation package:
 
 ```sh
-python3 scripts/winnow.py inspect-continuation fixtures/synthetic-continuation.json
-python3 scripts/winnow.py validate-successor fixtures/synthetic-continuation.json fixtures/synthetic-successor-seed.json
 python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
 ```
 
-For a successor, `publish` checks the new current round. Images retained in
-`history` were verified when their original rounds were published and are not
-network-reverified. Publish output also reports current-round image counts,
-cache status, and non-negative timings for validation, image verification, site
-publication, and total work.
+Continuation inspection and successor validation are also available as optional
+diagnostics:
 
-Run the repository tests as well:
+```sh
+python3 scripts/winnow.py inspect-continuation continuation.json
+python3 scripts/winnow.py validate-successor continuation.json next-seed.json
+```
+
+The publish result includes the hosted URL and expiration, current-round image
+and unique-image counts, and non-negative timings for validation, image
+verification, site publication, and total work. Never create, open, attach, or
+return a local HTML file or path.
+
+## Authoring contract
+
+Read `references/protocol.md` and `references/seed.schema.json` before authoring
+a seed. Sessions require images by default. Prefer one strong, source-backed
+image per option; use the supported 1–5 `images` range only when additional
+images add materially distinct, decision-relevant evidence. Use
+`session.imagePolicy.mode: "notApplicable"` with a reason only for a clearly
+non-visual decision.
+
+The runtime owns layout, interactions, ordering, profile logic, and continuation
+construction. Do not add runtime network calls, agent-authored presentation,
+hidden candidates, ranking weights, raw source HTML, credentials, or
+continuation JSON to a seed. The hosted URL is the deliverable.
+
+## Tests
 
 ```sh
 python3 -m unittest discover -s tests -v
 node --test tests/runtime-core.test.mjs
 ```
 
-The publish command returns the hosted HereNow URL; do not create, open, or
-return a local HTML file or local file path.
-
-The synthetic fixture uses reserved `example.com` image URLs to exercise the
-compiled media and browser fallback; use `verify-images` as an optional
-diagnostic against a researched seed with real source-backed URLs. An image
-may be hosted on a separate CDN from its cited source page.
-
-Options may use the legacy singular `image` field or the preferred `images`
-array with up to five images. Prefer one strong source-backed image per option;
-add more only when they show materially distinct, decision-relevant
-information. Every session is image-required by default;
-declare `session.imagePolicy.mode` as `notApplicable` with a reason only for a
-clearly non-visual decision. Initialize the required root
-`profileExclusions` field to `[]`. Multiple images appear as an accessible
-carousel. If a verified image later fails in the browser, the runtime keeps the
-media slot and announces `Image unavailable` instead of silently removing it.
-
-## Agent workflow
-
-For an initial request, read `references/protocol.md` and
-`references/seed.schema.json`, establish the immutable session fields, research
-broadly in private, select only 4–6 representative source-supported options,
-decide the session image policy, choose 1–6 comparison factors, collect at
-least one direct source-backed image for every option unless the policy is
-explicitly `notApplicable`, validate, and publish Round 1
-through HereNow. Only current-round images are fetched; completed rounds
-remain structurally immutable and are not network-reverified.
-The image `sourceId` identifies the cited source page; it does not require the
-direct image URL to share that page's hostname. `publish` performs the image
-verification automatically.
-The hosted URL is the only deliverable: never create, open, attach, or return
-a local HTML file or local file path. Treat
-shopping for products, shoes, clothing, travel, homes, people, styles, and
-designs as visual decisions that require images.
-
-For a continuation, validate the package, preserve the session and all
-completed rounds exactly, use only the selected profile patterns in the copied
-handoff as preference guidance, and never infer further preferences from
-verdict history. Copy `continuation.profileExclusions` exactly into the
-successor seed’s `profileExclusions`, research 4–6 new options, preserve the
-session image policy, add verified images for every new option when required,
-validate the successor, and publish it as a new anonymous HereNow URL. Return
-the hosted URL, never a generated local HTML artifact:
-
-```sh
-python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
-```
-
-Never add runtime network calls, agent-authored layout/CSS, hidden candidates,
-ranking weights, raw source HTML, credentials, or continuation JSON to the
-page. The only external runtime resources are cited HTTPS images.
-
 ## License
 
-Winnow-authored code and documentation in this portable runtime are licensed
-under Apache-2.0. The bundled Space Grotesk font and Lucide icons retain their
-upstream licenses; see [NOTICE](NOTICE), `assets/fonts/OFL.txt`, and
-`assets/icons/LICENSE`.
+Winnow-authored code and documentation are licensed under Apache-2.0. The
+bundled Space Grotesk font and Lucide icons retain their upstream licenses; see
+[NOTICE](NOTICE), `assets/fonts/OFL.txt`, and `assets/icons/LICENSE`.
