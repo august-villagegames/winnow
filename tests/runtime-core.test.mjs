@@ -359,3 +359,17 @@ test("round one continuation state renders in round two and supplies clipboard g
   assert.match(guidance, /selected profile patterns/);
   assert.match(guidance, new RegExp(persisted.text));
 });
+
+test("image viewer keeps the existing carousel and uses accessible viewer hooks", () => {
+  assert.match(runtimeUi, /data-viewer-open/);
+  assert.match(runtimeUi, /data-image-viewer/);
+  assert.match(runtimeUi, /data-viewer-image/);
+  assert.match(runtimeUi, /data-viewer-prev/);
+  assert.match(runtimeUi, /data-viewer-next/);
+  assert.match(runtimeUi, /data-viewer-close/);
+  assert.match(runtimeUi, /data-carousel-index/);
+  assert.match(runtimeUi, /showModal\(\)/);
+  assert.match(runtimeUi, /event\.key === "Escape"|cancel/);
+  assert.match(runtimeUi, /data-carousel/);
+  assert.match(runtimeUi, /referrerpolicy="no-referrer"/);
+});

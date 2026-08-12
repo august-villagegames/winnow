@@ -169,7 +169,7 @@
         "generatedAt": {"$ref": "#/$defs/timestamp"},
         "factors": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"$ref": "#/$defs/factor"}},
         "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}},
-        "options": {"type": "array", "minItems": 4, "maxItems": 6, "items": {"$ref": "#/$defs/option"}}
+        "options": {"type": "array", "minItems": 4, "maxItems": 10, "items": {"$ref": "#/$defs/option"}}
       }
     },
     "completedRound": {
@@ -181,8 +181,8 @@
         "generatedAt": {"$ref": "#/$defs/timestamp"},
         "factors": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"$ref": "#/$defs/factor"}},
         "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}},
-        "options": {"type": "array", "minItems": 4, "maxItems": 6, "items": {"$ref": "#/$defs/option"}},
-        "verdicts": {"type": "array", "minItems": 4, "maxItems": 6, "items": {"$ref": "#/$defs/verdict"}}
+        "options": {"type": "array", "minItems": 4, "maxItems": 10, "items": {"$ref": "#/$defs/option"}},
+        "verdicts": {"type": "array", "minItems": 4, "maxItems": 10, "items": {"$ref": "#/$defs/verdict"}}
       }
     },
     "continuationParent": {
