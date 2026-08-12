@@ -10,10 +10,8 @@ import datetime as dt
 import hashlib
 import json
 import math
-import os
 import re
 import sys
-import tempfile
 import time
 import unicodedata
 import urllib.error
@@ -45,9 +43,6 @@ ICONS_TOKEN = "__WINNOW_ICONS__"
 FONT_TOKEN = "__WINNOW_FONT_DATA__"
 IMAGE_MAX_BYTES = 8 * 1024 * 1024
 IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
-VERIFICATION_RECEIPT_VERSION = 1
-VERIFICATION_RECEIPT_TTL = dt.timedelta(hours=24)
-VERIFICATION_RECEIPT_ROOT_NAME = f"winnow-verification-v{VERIFICATION_RECEIPT_VERSION}"
 
 
 class ValidationError(ValueError):
@@ -573,248 +568,8 @@ def _current_image_manifest(seed: dict[str, Any]) -> list[dict[str, str]]:
     return [{"path": path, "url": image["url"]} for path, image in _current_image_entries(seed)]
 
 
-def _image_manifest_hash(manifest: list[dict[str, str]]) -> str:
-    return hashlib.sha256(canonical_json(manifest)).hexdigest()
-
-
 def _unique_manifest_urls(manifest: list[dict[str, str]]) -> list[str]:
     return list(dict.fromkeys(item["url"] for item in manifest))
-
-
-def _receipt_root(receipt_root: Path | None) -> Path:
-    if receipt_root is not None:
-        return Path(receipt_root)
-    return Path(tempfile.gettempdir()) / VERIFICATION_RECEIPT_ROOT_NAME
-
-
-def _session_receipt_directory(session_id: str, receipt_root: Path) -> Path:
-    session_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
-    return receipt_root / session_hash
-
-
-def _receipt_path(seed: dict[str, Any], receipt_root: Path | None = None) -> Path:
-    root = _receipt_root(receipt_root)
-    session_id = seed["session"]["id"]
-    round_number = seed["round"]["number"]
-    return _session_receipt_directory(session_id, root) / f"round-{round_number}.json"
-
-
-def _utc_now(value: dt.datetime | None) -> dt.datetime:
-    if value is None:
-        return dt.datetime.now(dt.timezone.utc)
-    if not isinstance(value, dt.datetime) or value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("now must be a timezone-aware datetime")
-    return value.astimezone(dt.timezone.utc)
-
-
-def _parse_receipt_timestamp(value: Any, path: str) -> dt.datetime:
-    if not isinstance(value, str) or not ISO_RE.fullmatch(value):
-        raise ValidationError([f"{path}: expected an RFC3339 timestamp"])
-    try:
-        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValidationError([f"{path}: invalid timestamp"]) from exc
-    if parsed.tzinfo is None or parsed.utcoffset() != dt.timedelta(0):
-        raise ValidationError([f"{path}: expected a UTC timestamp"])
-    return parsed.astimezone(dt.timezone.utc)
-
-
-def _format_receipt_timestamp(value: dt.datetime) -> str:
-    return value.astimezone(dt.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-
-
-def _validate_receipt(
-    value: Any,
-    *,
-    session_id: str | None = None,
-    round_number: int | None = None,
-    manifest_hash: str | None = None,
-    manifest: list[dict[str, str]] | None = None,
-    now: dt.datetime | None = None,
-) -> dict[str, Any]:
-    receipt = _object(value, "receipt", {"version", "sessionId", "roundNumber", "manifestHash", "verifiedAt", "expiresAt", "images"})
-    if receipt.get("version") != VERIFICATION_RECEIPT_VERSION or isinstance(receipt.get("version"), bool):
-        raise ValidationError(["receipt.version: unsupported receipt version"])
-    _id(_required(receipt, "sessionId", "receipt"), "receipt.sessionId")
-    receipt_round = _required(receipt, "roundNumber", "receipt")
-    if not isinstance(receipt_round, int) or isinstance(receipt_round, bool) or receipt_round < 1:
-        raise ValidationError(["receipt.roundNumber: expected a positive integer"])
-    receipt_manifest_hash = _required(receipt, "manifestHash", "receipt")
-    if not isinstance(receipt_manifest_hash, str) or not HASH_RE.fullmatch(receipt_manifest_hash):
-        raise ValidationError(["receipt.manifestHash: expected a SHA-256 hash"])
-    verified_at = _parse_receipt_timestamp(_required(receipt, "verifiedAt", "receipt"), "receipt.verifiedAt")
-    expires_at = _parse_receipt_timestamp(_required(receipt, "expiresAt", "receipt"), "receipt.expiresAt")
-    if expires_at - verified_at != VERIFICATION_RECEIPT_TTL:
-        raise ValidationError(["receipt.expiresAt: must be exactly 24 hours after verifiedAt"])
-    images = _array(_required(receipt, "images", "receipt"), "receipt.images")
-    for image_index, image in enumerate(images):
-        image_path = f"receipt.images[{image_index}]"
-        image = _object(image, image_path, {"requestedUrl", "url", "contentType", "bytes", "sha256"})
-        _https(_required(image, "requestedUrl", image_path), f"{image_path}.requestedUrl")
-        _https(_required(image, "url", image_path), f"{image_path}.url")
-        content_type = _required(image, "contentType", image_path)
-        if not isinstance(content_type, str) or content_type not in IMAGE_CONTENT_TYPES:
-            raise ValidationError([f"{image_path}.contentType: unsupported image content type"])
-        byte_count = _required(image, "bytes", image_path)
-        if not isinstance(byte_count, int) or isinstance(byte_count, bool) or not 0 < byte_count <= IMAGE_MAX_BYTES:
-            raise ValidationError([f"{image_path}.bytes: expected a positive image size within the limit"])
-        digest = _required(image, "sha256", image_path)
-        if not isinstance(digest, str) or not HASH_RE.fullmatch(digest):
-            raise ValidationError([f"{image_path}.sha256: expected a SHA-256 hash"])
-    if session_id is not None and receipt["sessionId"] != session_id:
-        raise ValidationError(["receipt.sessionId: does not match the seed session"])
-    if round_number is not None and receipt_round != round_number:
-        raise ValidationError(["receipt.roundNumber: does not match the seed round"])
-    if manifest_hash is not None and receipt_manifest_hash != manifest_hash:
-        raise ValidationError(["receipt.manifestHash: does not match the current image manifest"])
-    if manifest is not None:
-        expected_urls = _unique_manifest_urls(manifest)
-        actual_urls = [image["requestedUrl"] for image in images]
-        if actual_urls != expected_urls:
-            raise ValidationError(["receipt.images: does not match the current image manifest"])
-    if now is not None and now >= expires_at:
-        raise ValidationError(["receipt: expired"])
-    return receipt
-
-
-def _delete_receipt_path(path: Path) -> None:
-    try:
-        path.unlink()
-    except OSError:
-        pass
-
-
-def _delete_receipt(seed: dict[str, Any], receipt_root: Path | None = None) -> None:
-    _delete_receipt_path(_receipt_path(seed, receipt_root))
-
-
-def _prune_receipts(receipt_root: Path, now: dt.datetime) -> None:
-    try:
-        if not receipt_root.is_dir():
-            return
-        receipt_paths = [path for path in receipt_root.rglob("*.json") if path.is_file()]
-    except OSError:
-        return
-    for path in receipt_paths:
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-            _validate_receipt(value, now=now)
-        except (OSError, TypeError, ValueError, json.JSONDecodeError):
-            _delete_receipt_path(path)
-    try:
-        directories = [path for path in receipt_root.rglob("*") if path.is_dir()]
-    except OSError:
-        directories = []
-    for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
-        try:
-            directory.rmdir()
-        except OSError:
-            pass
-    try:
-        receipt_root.rmdir()
-    except OSError:
-        pass
-
-
-def _load_receipt(
-    seed: dict[str, Any],
-    manifest: list[dict[str, str]],
-    *,
-    receipt_root: Path,
-    now: dt.datetime,
-) -> dict[str, Any] | None:
-    path = _receipt_path(seed, receipt_root)
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return None
-    except OSError:
-        return None
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        _delete_receipt_path(path)
-        return None
-    try:
-        return _validate_receipt(
-            value,
-            session_id=seed["session"]["id"],
-            round_number=seed["round"]["number"],
-            manifest_hash=_image_manifest_hash(manifest),
-            manifest=manifest,
-            now=now,
-        )
-    except ValidationError:
-        _delete_receipt_path(path)
-        return None
-
-
-def _write_receipt(value: dict[str, Any], seed: dict[str, Any], receipt_root: Path) -> None:
-    path = _receipt_path(seed, receipt_root)
-    directory = path.parent
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(receipt_root, 0o700)
-    os.chmod(directory, 0o700)
-    file_descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=directory)
-    temporary_path = Path(temporary_name)
-    try:
-        os.fchmod(file_descriptor, 0o600)
-        with os.fdopen(file_descriptor, "wb") as handle:
-            file_descriptor = -1
-            handle.write(canonical_json(value))
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_path, path)
-    finally:
-        if file_descriptor >= 0:
-            try:
-                os.close(file_descriptor)
-            except OSError:
-                pass
-        try:
-            temporary_path.unlink()
-        except OSError:
-            pass
-
-
-def _receipt_from_results(
-    seed: dict[str, Any],
-    manifest: list[dict[str, str]],
-    verified: list[dict[str, Any]],
-    now: dt.datetime,
-) -> dict[str, Any] | None:
-    unique_urls = _unique_manifest_urls(manifest)
-    if len(verified) != len(unique_urls):
-        return None
-    images: list[dict[str, Any]] = []
-    for url, result in zip(unique_urls, verified):
-        if not isinstance(result, dict):
-            return None
-        requested_url = result.get("requestedUrl", url)
-        if requested_url != url:
-            return None
-        required_fields = {"url", "contentType", "bytes", "sha256"}
-        if not required_fields.issubset(result):
-            return None
-        images.append({"requestedUrl": url, **{key: result[key] for key in required_fields}})
-    receipt = {
-        "version": VERIFICATION_RECEIPT_VERSION,
-        "sessionId": seed["session"]["id"],
-        "roundNumber": seed["round"]["number"],
-        "manifestHash": _image_manifest_hash(manifest),
-        "verifiedAt": _format_receipt_timestamp(now),
-        "expiresAt": _format_receipt_timestamp(now + VERIFICATION_RECEIPT_TTL),
-        "images": images,
-    }
-    try:
-        return _validate_receipt(
-            receipt,
-            session_id=seed["session"]["id"],
-            round_number=seed["round"]["number"],
-            manifest_hash=receipt["manifestHash"],
-            manifest=manifest,
-            now=now,
-        )
-    except ValidationError:
-        return None
 
 
 def _image_type(body: bytes) -> str | None:
@@ -863,11 +618,9 @@ def _fetch_image(url: str, *, timeout: float = 15) -> dict[str, Any]:
             if detected_type != content_type:
                 raise ValueError(f"content type {content_type} does not match {detected_type} bytes")
             return {
-                "requestedUrl": url,
                 "url": final_parsed.geturl(),
                 "contentType": content_type,
                 "bytes": len(body),
-                "sha256": hashlib.sha256(body).hexdigest(),
             }
     except urllib.error.HTTPError as exc:
         raise ValueError(f"HTTP status {exc.code}") from None
@@ -889,9 +642,7 @@ def _verify_current_image_urls(seed: dict[str, Any], manifest: list[dict[str, st
         result = _fetch_image(url, timeout=timeout)
         if not isinstance(result, dict):
             raise ValueError("invalid image verification result")
-        result = dict(result)
-        result.setdefault("requestedUrl", url)
-        return result
+        return dict(result)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(unique_urls))) as executor:
         futures = {executor.submit(fetch, url): index for index, url in enumerate(unique_urls)}
@@ -913,51 +664,20 @@ def verify_image_urls(
     seed: Any,
     *,
     timeout: float = 15,
-    receipt_root: Path | None = None,
-    now: dt.datetime | None = None,
 ) -> dict[str, Any]:
     seed = validate_seed(seed)
     current_manifest = _current_image_manifest(seed)
-    current_now = _utc_now(now)
-    current_receipt_root = _receipt_root(receipt_root)
-    _prune_receipts(current_receipt_root, current_now)
     image_count = len(current_manifest)
     unique_image_count = len(_unique_manifest_urls(current_manifest))
     result_base = {
         "scope": "currentRound",
         "images": image_count,
         "uniqueImages": unique_image_count,
-        "cacheHit": False,
-        "receiptStored": False,
-        "receiptExpiresAt": None,
     }
     if not current_manifest:
         return {**result_base, "verified": []}
-    cached = _load_receipt(seed, current_manifest, receipt_root=current_receipt_root, now=current_now)
-    if cached is not None:
-        return {
-            **result_base,
-            "cacheHit": True,
-            "receiptExpiresAt": cached["expiresAt"],
-            "verified": cached["images"],
-        }
     verified = _verify_current_image_urls(seed, current_manifest, timeout=timeout)
-    receipt = _receipt_from_results(seed, current_manifest, verified, current_now)
-    receipt_expires_at = None
-    receipt_stored = False
-    if receipt is not None:
-        try:
-            _write_receipt(receipt, seed, current_receipt_root)
-            receipt_stored = True
-            receipt_expires_at = receipt["expiresAt"]
-        except (OSError, TypeError, ValueError):
-            pass
-    return {
-        **result_base,
-        "receiptStored": receipt_stored,
-        "receiptExpiresAt": receipt_expires_at,
-        "verified": verified,
-    }
+    return {**result_base, "verified": verified}
 
 
 def _http_json(url: str, method: str, body: dict[str, Any] | None = None, *, headers: dict[str, str] | None = None, timeout: float = 30) -> tuple[int, dict[str, Any]]:
@@ -1039,8 +759,6 @@ def publish(
     continuation: dict[str, Any] | None = None,
     endpoint: str = PUBLISH_ENDPOINT,
     allow_http_test: bool = False,
-    receipt_root: Path | None = None,
-    now: dt.datetime | None = None,
 ) -> dict[str, Any]:
     total_started = time.monotonic()
     validation_started = total_started
@@ -1053,7 +771,7 @@ def publish(
         validate_successor(continuation, seed)
     validation_ms = _elapsed_ms(validation_started)
     image_started = time.monotonic()
-    image_verification = verify_image_urls(seed, receipt_root=receipt_root, now=now)
+    image_verification = verify_image_urls(seed)
     image_verification_ms = _elapsed_ms(image_started)
     publication_started = time.monotonic()
     html = build_html(seed)
@@ -1087,10 +805,6 @@ def publish(
         allow_http=allow_http_test,
     )
     site_publication_ms = _elapsed_ms(publication_started)
-    try:
-        _delete_receipt(seed, receipt_root=receipt_root)
-    except OSError:
-        pass
     total_ms = _elapsed_ms(total_started)
     return {
         "siteUrl": site_url,
@@ -1102,7 +816,6 @@ def publish(
             "scope": image_verification.get("scope", "currentRound"),
             "images": image_verification.get("images", 0),
             "uniqueImages": image_verification.get("uniqueImages", 0),
-            "cacheHit": bool(image_verification.get("cacheHit", False)),
         },
         "timingsMs": {
             "validation": validation_ms,
