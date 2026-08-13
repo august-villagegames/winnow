@@ -186,8 +186,20 @@ trend when both sides provide a strong contrast. Skips and free-text factors do
 not create candidates.
 
 Persisted active patterns retain priority in the six available profile slots;
-new candidates fill only remaining slots. A persisted pattern remains in the
+new candidates fill only remaining slots. Numeric and boolean factors are
+exclusive: the first persisted pattern for either type wins, otherwise the
+first candidate in the runtime's deterministic order wins. Category factors
+may retain multiple values. An excluded numeric or boolean pattern reserves
+its factor for the current summary, so its restore control never appears beside
+an alternative preference; because exclusions are key-specific, a different
+candidate may be inferred in a later round. A persisted pattern remains in the
 profile even when the current evidence no longer produces it. The summary
 renders each active pattern as a compact pill with its support count. Removing
 a pill excludes only that same factor, polarity, direction, and semantic value
 from future guidance; the current summary keeps it available for restoration.
+
+Existing v4 seeds and continuations that contain multiple distinct numeric or
+boolean profile records remain valid legacy input. The runtime uses the first
+record in array order and every newly generated continuation serializes only
+that normalized winner. Rejecting legacy records requires a future protocol or
+runtime-version migration.

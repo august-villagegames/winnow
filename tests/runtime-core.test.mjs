@@ -155,17 +155,51 @@ test("a single like does not create a like pattern when dislikes are plentiful",
   assert.ok(patterns.every((pattern) => !pattern.text.startsWith("1 liked")));
 });
 
-test("profile reports counted like and dislike patterns without requiring both sides", () => {
-  const patterns = core.computeProfile(seed, {
+test("profile retains one boolean preference when both polarities have support", () => {
+  const decisions = {
     "sofa-1": "like",
     "sofa-2": "dislike",
     "sofa-3": "like",
     "sofa-4": "dislike",
     "sofa-5": "skip",
     "sofa-6": "skip",
-  });
-  assert.ok(patterns.some((pattern) => pattern.polarity === "like" && pattern.text === "2 liked options include covers" && pattern.supportCount === 2));
-  assert.ok(patterns.some((pattern) => pattern.polarity === "dislike" && pattern.text === "2 disliked options exclude covers" && pattern.supportCount === 2));
+  };
+  const candidates = core.computeProfileCandidates(seed, decisions).filter((pattern) => pattern.factorId === "covers");
+  const patterns = core.computeProfile(seed, decisions).filter((pattern) => pattern.factorId === "covers");
+  assert.equal(candidates.length, 2);
+  assert.equal(patterns.length, 1);
+  assert.equal(patterns[0].key, candidates[0].key);
+});
+
+test("numeric and boolean factors keep one preference while categories retain multiple values", () => {
+  const expanded = core.clone(seed);
+  expanded.round.factors.push({ id: "finish", label: "Finish", valueType: "category", display: { style: "text" } });
+  expanded.round.options.forEach((option, index) => option.values.push({
+    factorId: "finish",
+    value: index < 3 ? "Velvet" : "Linen",
+    sourceId: option.primarySourceId,
+  }));
+  const decisions = {
+    "sofa-1": "like",
+    "sofa-2": "like",
+    "sofa-3": "like",
+    "sofa-4": "dislike",
+    "sofa-5": "dislike",
+    "sofa-6": "dislike",
+  };
+  const candidates = core.computeProfileCandidates(expanded, decisions);
+  const patterns = core.computeProfile(expanded, decisions);
+  for (const factorId of ["price", "covers"]) {
+    const factorCandidates = candidates.filter((pattern) => pattern.factorId === factorId);
+    const factorPatterns = patterns.filter((pattern) => pattern.factorId === factorId);
+    assert.ok(factorCandidates.length >= 2);
+    assert.equal(factorPatterns.length, 1);
+    assert.equal(factorPatterns[0].key, factorCandidates[0].key);
+  }
+  assert.deepEqual(
+    patterns.filter((pattern) => pattern.factorId === "finish").map((pattern) => pattern.value).sort(),
+    ["Linen", "Velvet"],
+  );
 });
 
 test("numeric one-sided patterns use a counted average", () => {
@@ -283,6 +317,66 @@ test("matching candidates refresh persisted support and numeric means", () => {
   assert.equal(refreshed[0].supportCount, candidate.supportCount);
   assert.equal(refreshed[0].mean, candidate.mean);
   assert.match(refreshed[0].text, /\$1,870/);
+});
+
+test("legacy exclusive records retain their first persisted preference and normalize continuations", () => {
+  const decisions = {
+    "sofa-1": "like",
+    "sofa-2": "dislike",
+    "sofa-3": "like",
+    "sofa-4": "dislike",
+    "sofa-5": "skip",
+    "sofa-6": "skip",
+  };
+  const priceCandidates = core.computeProfileCandidates(seed, decisions).filter((pattern) => pattern.factorId === "price");
+  const continued = core.clone(seed);
+  continued.profilePatterns = [
+    core.profilePatternRecord(priceCandidates[1]),
+    core.profilePatternRecord(priceCandidates[0]),
+  ];
+  assert.deepEqual(core.validateRuntimeSeed(continued), []);
+  const patterns = core.computeProfile(continued, decisions, continued.profilePatterns, []);
+  assert.deepEqual(patterns.filter((pattern) => pattern.factorId === "price").map((pattern) => pattern.key), [priceCandidates[1].key]);
+  const continuation = core.buildContinuation(continued, decisions, "d".repeat(64), "https://example.here.now/round-1");
+  assert.deepEqual(continuation.profilePatterns.filter((pattern) => pattern.factorId === "price").map((pattern) => pattern.key), [priceCandidates[1].key]);
+  const excludedDisplay = core.computeProfileDisplay(continued, decisions, continued.profilePatterns, [priceCandidates[1].key]);
+  assert.deepEqual(excludedDisplay.filter((pattern) => pattern.factorId === "price").map((pattern) => pattern.key), [priceCandidates[1].key]);
+});
+
+test("excluded exclusive records reserve the current summary and later allow a different candidate", () => {
+  const decisions = {
+    "sofa-1": "like",
+    "sofa-2": "dislike",
+    "sofa-3": "like",
+    "sofa-4": "dislike",
+    "sofa-5": "skip",
+    "sofa-6": "skip",
+  };
+  const priceCandidates = core.computeProfileCandidates(seed, decisions).filter((pattern) => pattern.factorId === "price");
+  const excluded = priceCandidates[1];
+  const active = core.computeProfile(seed, decisions, [], [excluded.key]);
+  const display = core.computeProfileDisplay(seed, decisions, [], [excluded.key]);
+  assert.deepEqual(active.filter((pattern) => pattern.factorId === "price"), []);
+  assert.deepEqual(display.filter((pattern) => pattern.factorId === "price").map((pattern) => pattern.key), [excluded.key]);
+
+  const continuation = core.buildContinuation(seed, decisions, "e".repeat(64), "https://example.here.now/round-1", [excluded.key]);
+  assert.deepEqual(continuation.profilePatterns.filter((pattern) => pattern.factorId === "price"), []);
+  const successor = core.clone(seed);
+  successor.history = continuation.completedRounds;
+  successor.round.number = continuation.nextRoundNumber;
+  successor.profilePatterns = continuation.profilePatterns;
+  successor.profileExclusions = continuation.profileExclusions;
+  successor.round.options.forEach((option) => {
+    option.values.find((value) => value.factorId === "price").value = 1000;
+  });
+  const laterPatterns = core.computeProfile(
+    successor,
+    Object.fromEntries(successor.round.options.map((option) => [option.id, "like"])),
+    successor.profilePatterns,
+    successor.profileExclusions,
+  ).filter((pattern) => pattern.factorId === "price");
+  assert.equal(laterPatterns.length, 1);
+  assert.notEqual(laterPatterns[0].key, excluded.key);
 });
 
 test("dismissed patterns stay restorable in the current display but never return to guidance", () => {

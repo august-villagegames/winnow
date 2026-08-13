@@ -14,6 +14,26 @@ not assume the user's current working directory is the skill directory.
 During Winnow planning, including between rounds, speak to the user only when
 input is needed or an issue or hurdle blocks progress.
 
+## Install and update lifecycle
+
+This skill is published from `august-villagegames/winnow`. Install it with:
+
+```sh
+npx skills add august-villagegames/winnow --skill winnow
+```
+
+Use `-g` for a global installation. Update it explicitly with
+`npx skills update winnow` (or `npx skills update winnow -g`) between tasks.
+The repository ref or commit and the Skills CLI's recorded source/content state
+identify the installed revision. Do not update Winnow during an active task;
+complete that task using the revision already loaded.
+
+Changes that preserve `schemaVersion` and `runtimeVersion` remain compatible
+with existing hosted sessions and continuation packages. A seed or
+continuation contract change requires an explicit version change and migration
+decision. Hosted pages retain their embedded runtime and are not retroactively
+updated.
+
 ## Initial round
 
 1. Establish the immutable session ID, title, original query, 0–5 requirements,

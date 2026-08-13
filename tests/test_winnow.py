@@ -119,6 +119,8 @@ class RepositoryChecks(unittest.TestCase):
         skill_text = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("$SKILL_DIR/references/protocol.md", skill_text)
         self.assertIn("$SKILL_DIR/scripts/winnow.py", skill_text)
+        self.assertIn("npx skills add august-villagegames/winnow --skill winnow", skill_text)
+        self.assertIn("npx skills update winnow", skill_text)
 
     def test_installed_skill_runs_from_unrelated_working_directory(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -320,6 +322,31 @@ class ProtocolTests(unittest.TestCase):
         seed["profileExclusions"] = [pattern["key"]]
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_seed(seed)
+
+    def test_legacy_distinct_numeric_profile_patterns_remain_valid(self):
+        seed = fixture()
+        lower = {
+            "key": winnow._profile_pattern_key("price", "dislike", "lower", None),
+            "factorId": "price",
+            "polarity": "dislike",
+            "direction": "lower",
+            "value": None,
+            "mean": None,
+            "supportCount": 2,
+            "strength": 1,
+        }
+        higher = {
+            "key": winnow._profile_pattern_key("price", "like", "higher", None),
+            "factorId": "price",
+            "polarity": "like",
+            "direction": "higher",
+            "value": None,
+            "mean": None,
+            "supportCount": 2,
+            "strength": 1,
+        }
+        seed["profilePatterns"] = [lower, higher]
+        self.assertIs(winnow.validate_seed(seed), seed)
 
     def test_unknown_keys_are_rejected_at_every_protocol_level(self):
         cases = [
