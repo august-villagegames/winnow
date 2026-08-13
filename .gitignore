@@ -5,3 +5,4 @@ build/
 *.tmp
 qa-*.png
 .codex/environments/
+/references/

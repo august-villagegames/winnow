@@ -4,6 +4,7 @@ import base64
 import copy
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -788,8 +789,29 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn("profileExclusions", html)
         self.assertIn("data-profile-toggle", html)
         self.assertIn("rotate-ccw", html)
+        self.assertIn("font-size: 12px;", html)
+        self.assertIn("--type-base: 1rem;", html)
         self.assertIn("connect-src 'none'", html)
         self.assertNotIn("fetch(", html)
+
+    def test_runtime_uses_a_twelve_pixel_rem_typography_scale(self):
+        css = (SKILL_DIR / "assets" / "runtime.css").read_text(encoding="utf-8")
+        self.assertRegex(css, r":root\s*\{\s*font-size:\s*12px;\n")
+        for token in (
+            "--type-2xs",
+            "--type-xs",
+            "--type-sm",
+            "--type-base",
+            "--type-md",
+            "--type-lg",
+            "--type-xl",
+            "--type-2xl",
+            "--type-3xl",
+        ):
+            self.assertIn(f"font-size: var({token});", css)
+
+        root_font_size = re.sub(r"font-size:\s*12px;", "", css, count=1)
+        self.assertNotRegex(root_font_size, r"font-size:\s*[0-9.]+px;")
 
     def test_build_compiles_multiple_images_for_the_runtime_carousel(self):
         seed = fixture()
