@@ -4,8 +4,8 @@ Final result: passed
 
 ## Evidence
 
-- Reference: `references/visual/winnow-layout-v2.png` (opened at full resolution).
-- Updated summary reference: `references/visual/winnow-summary-v2.png` (opened at full resolution).
+- Visual baselines and wireframe sources are local-only development artifacts and
+  are not tracked in the repository.
 - Round 1 capture: `/tmp/winnow-round1.png`.
 - Updated summary capture: `/tmp/winnow-frame-fix.png`.
 - Width-cap capture: `/tmp/winnow-width-cap.png` (500px shell centered in a wider viewport).
