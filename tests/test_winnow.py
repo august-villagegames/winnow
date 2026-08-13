@@ -232,6 +232,31 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(winnow.ValidationError):
             winnow.validate_seed(seed)
 
+    def test_legacy_distinct_numeric_profile_patterns_remain_valid(self):
+        seed = fixture()
+        lower = {
+            "key": winnow._profile_pattern_key("price", "dislike", "lower", None),
+            "factorId": "price",
+            "polarity": "dislike",
+            "direction": "lower",
+            "value": None,
+            "mean": None,
+            "supportCount": 2,
+            "strength": 1,
+        }
+        higher = {
+            "key": winnow._profile_pattern_key("price", "like", "higher", None),
+            "factorId": "price",
+            "polarity": "like",
+            "direction": "higher",
+            "value": None,
+            "mean": None,
+            "supportCount": 2,
+            "strength": 1,
+        }
+        seed["profilePatterns"] = [lower, higher]
+        self.assertIs(winnow.validate_seed(seed), seed)
+
     def test_unknown_keys_are_rejected_at_every_protocol_level(self):
         cases = [
             (lambda value: value.update({"extra": True})),
