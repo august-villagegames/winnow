@@ -43,6 +43,14 @@ ICONS_TOKEN = "__WINNOW_ICONS__"
 FONT_TOKEN = "__WINNOW_FONT_DATA__"
 IMAGE_MAX_BYTES = 8 * 1024 * 1024
 IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
+_MAX_REQUIREMENTS = 5
+_MIN_FACTORS = 1
+_MAX_FACTORS = 6
+_MIN_SOURCES = 1
+_MIN_OPTIONS = 4
+_MAX_OPTIONS = 10
+_MIN_IMAGES = 1
+_MAX_IMAGES = 5
 MAX_PROFILE_PATTERNS = 6
 BUNDLE_ROOT = Path(__file__).resolve().parents[1]
 
@@ -312,8 +320,8 @@ def _validate_option(option: Any, index: int, path_prefix: str, factors: list[di
         _validate_image(option["image"], f"{path}.image", sources)
     if "images" in option:
         images = _array(option["images"], f"{path}.images")
-        if not 1 <= len(images) <= 5:
-            raise ValidationError([f"{path}.images: requires 1–5 images"])
+        if not _MIN_IMAGES <= len(images) <= _MAX_IMAGES:
+            raise ValidationError([f"{path}.images: requires {_MIN_IMAGES}–{_MAX_IMAGES} images"])
         for image_index, image in enumerate(images):
             _validate_image(image, f"{path}.images[{image_index}]", sources)
     if "optionUrl" in option:
@@ -359,20 +367,20 @@ def _validate_round(round_value: Any, expected_number: int, completed: bool, pat
         raise ValidationError([f"{path}.number: expected {expected_number}"])
     _iso(_required(round_value, "generatedAt", path), f"{path}.generatedAt")
     factors_raw = _array(_required(round_value, "factors", path), f"{path}.factors")
-    if not 1 <= len(factors_raw) <= 6:
-        raise ValidationError([f"{path}.factors: requires 1–6 factors"])
+    if not _MIN_FACTORS <= len(factors_raw) <= _MAX_FACTORS:
+        raise ValidationError([f"{path}.factors: requires {_MIN_FACTORS}–{_MAX_FACTORS} factors"])
     factors = [_validate_factor(value, index, f"{path}.factors") for index, value in enumerate(factors_raw)]
     _unique([factor["id"] for factor in factors], f"{path}.factors", "factor IDs")
     _unique([factor["label"] for factor in factors], f"{path}.factors", "factor labels")
     sources_raw = _array(_required(round_value, "sources", path), f"{path}.sources")
-    if not sources_raw:
+    if len(sources_raw) < _MIN_SOURCES:
         raise ValidationError([f"{path}.sources: requires at least one source"])
     sources = [_validate_source(value, index, f"{path}.sources") for index, value in enumerate(sources_raw)]
     _unique([source["id"] for source in sources], f"{path}.sources", "source IDs")
     source_map = {source["id"]: source for source in sources}
     options_raw = _array(_required(round_value, "options", path), f"{path}.options")
-    if not 4 <= len(options_raw) <= 10:
-        raise ValidationError([f"{path}.options: requires 4–10 options"])
+    if not _MIN_OPTIONS <= len(options_raw) <= _MAX_OPTIONS:
+        raise ValidationError([f"{path}.options: requires {_MIN_OPTIONS}–{_MAX_OPTIONS} options"])
     options = [_validate_option(value, index, f"{path}.options", factors, source_map) for index, value in enumerate(options_raw)]
     _unique([option["id"] for option in options], f"{path}.options", "option IDs")
     if completed:
@@ -450,7 +458,7 @@ def _validate_session(value: Any, path: str = "seed.session") -> dict[str, Any]:
     _id(_required(value, "id", path), f"{path}.id")
     _plain(_required(value, "title", path), f"{path}.title", max_length=120, trimmed=True)
     _plain(_required(value, "query", path), f"{path}.query", max_length=1000)
-    _string_array(_required(value, "requirements", path), f"{path}.requirements", max_items=5, max_length=100)
+    _string_array(_required(value, "requirements", path), f"{path}.requirements", max_items=_MAX_REQUIREMENTS, max_length=100)
     if "primaryFactorId" in value:
         _id(value["primaryFactorId"], f"{path}.primaryFactorId")
     policy = _object(_required(value, "imagePolicy", path), f"{path}.imagePolicy", {"mode", "reason"})
