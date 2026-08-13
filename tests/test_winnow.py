@@ -4,6 +4,10 @@ import base64
 import copy
 import importlib.util
 import json
+import shutil
+import subprocess
+import sys
+import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -11,11 +15,12 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("portable_winnow", ROOT / "scripts" / "winnow.py")
+SKILL_DIR = ROOT / ".agents" / "skills" / "winnow"
+SPEC = importlib.util.spec_from_file_location("portable_winnow", SKILL_DIR / "scripts" / "winnow.py")
 assert SPEC and SPEC.loader
 winnow = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(winnow)
-SCHEMA = json.loads((ROOT / "references" / "seed.schema.json").read_text(encoding="utf-8"))
+SCHEMA = json.loads((SKILL_DIR / "references" / "seed.schema.json").read_text(encoding="utf-8"))
 
 
 def fixture(name: str = "synthetic-seed.json") -> dict:
@@ -85,18 +90,96 @@ def verified_image(url: str) -> dict:
 
 
 class RepositoryChecks(unittest.TestCase):
-    def test_winnow_skill_paths_share_canonical_directory(self):
-        canonical_dir = ROOT / ".agents" / "skills" / "winnow"
+    def test_winnow_skill_bundle_is_complete_and_claude_uses_it(self):
+        required = (
+            "SKILL.md",
+            "references/protocol.md",
+            "references/seed.schema.json",
+            "scripts/winnow.py",
+            "assets/runtime.html",
+            "assets/runtime.css",
+            "assets/runtime-core.js",
+            "assets/runtime-ui.js",
+            "assets/fonts/SpaceGrotesk-latin.woff2",
+            "assets/icons/LICENSE",
+            "assets/icons/external-link.svg",
+            "assets/icons/heart.svg",
+            "assets/icons/rotate-ccw.svg",
+            "assets/icons/trending-down.svg",
+            "assets/icons/trending-up.svg",
+            "assets/icons/x.svg",
+        )
+        for relative_path in required:
+            with self.subTest(relative_path=relative_path):
+                self.assertTrue((SKILL_DIR / relative_path).is_file())
+
         claude_dir = ROOT / ".claude" / "skills" / "winnow"
-        canonical = canonical_dir / "SKILL.md"
-        claude = claude_dir / "SKILL.md"
-        self.assertTrue(canonical.is_file())
         self.assertTrue(claude_dir.is_symlink(), "Claude skill path must point to the canonical skill directory")
-        self.assertEqual(claude_dir.resolve(), canonical_dir.resolve())
-        self.assertEqual(claude.read_bytes(), canonical.read_bytes())
-        skill_text = canonical.read_text(encoding="utf-8")
+        self.assertEqual(claude_dir.resolve(), SKILL_DIR.resolve())
+        skill_text = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("$SKILL_DIR/references/protocol.md", skill_text)
+        self.assertIn("$SKILL_DIR/scripts/winnow.py", skill_text)
         self.assertIn("npx skills add august-villagegames/winnow --skill winnow", skill_text)
         self.assertIn("npx skills update winnow", skill_text)
+
+    def test_installed_skill_runs_from_unrelated_working_directory(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            installed = temporary / "installed" / "winnow"
+            shutil.copytree(SKILL_DIR, installed)
+            inputs = temporary / "inputs"
+            inputs.mkdir()
+            for name in ("synthetic-seed.json", "synthetic-continuation.json", "synthetic-successor-seed.json"):
+                shutil.copy(ROOT / "fixtures" / name, inputs / name)
+            unrelated = temporary / "unrelated"
+            unrelated.mkdir()
+            script = installed / "scripts" / "winnow.py"
+
+            def run(*arguments: str) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [sys.executable, str(script), *arguments],
+                    cwd=unrelated,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+
+            for arguments in (
+                ("validate", str(inputs / "synthetic-seed.json")),
+                ("inspect-continuation", str(inputs / "synthetic-continuation.json")),
+                (
+                    "validate-successor",
+                    str(inputs / "synthetic-continuation.json"),
+                    str(inputs / "synthetic-successor-seed.json"),
+                ),
+            ):
+                with self.subTest(arguments=arguments):
+                    result = run(*arguments)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+
+            compile_code = """
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+script, seed_path = map(Path, sys.argv[1:])
+spec = importlib.util.spec_from_file_location('installed_winnow', script)
+assert spec and spec.loader
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+seed = json.loads(seed_path.read_text(encoding='utf-8'))
+html = module.build_html(seed)
+assert b'__WINNOW_' not in html
+"""
+            result = subprocess.run(
+                [sys.executable, "-c", compile_code, str(script), str(inputs / "synthetic-seed.json")],
+                cwd=unrelated,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_schema_declares_winnow_key_uniqueness_boundary(self):
         profile_patterns = SCHEMA["$defs"]["profilePatterns"]

@@ -44,6 +44,7 @@ FONT_TOKEN = "__WINNOW_FONT_DATA__"
 IMAGE_MAX_BYTES = 8 * 1024 * 1024
 IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
 MAX_PROFILE_PATTERNS = 6
+BUNDLE_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ValidationError(ValueError):
@@ -577,7 +578,7 @@ def _read_asset(path: Path, description: str) -> str:
 
 
 def _font_data() -> str:
-    path = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "SpaceGrotesk-latin.woff2"
+    path = BUNDLE_ROOT / "assets" / "fonts" / "SpaceGrotesk-latin.woff2"
     try:
         return "data:font/woff2;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
     except OSError as exc:
@@ -586,13 +587,12 @@ def _font_data() -> str:
 
 def build_html(seed: dict[str, Any], *, expires_at: str | None = None, template_path: Path | None = None) -> bytes:
     validate_seed(seed)
-    root = Path(__file__).resolve().parents[1]
-    template = template_path or root / "assets" / "runtime.html"
+    template = template_path or BUNDLE_ROOT / "assets" / "runtime.html"
     html = _read_asset(template, "runtime template")
-    css = _read_asset(root / "assets" / "runtime.css", "runtime CSS")
-    core = _read_asset(root / "assets" / "runtime-core.js", "runtime core")
-    ui = _read_asset(root / "assets" / "runtime-ui.js", "runtime UI")
-    icons_dir = root / "assets" / "icons"
+    css = _read_asset(BUNDLE_ROOT / "assets" / "runtime.css", "runtime CSS")
+    core = _read_asset(BUNDLE_ROOT / "assets" / "runtime-core.js", "runtime core")
+    ui = _read_asset(BUNDLE_ROOT / "assets" / "runtime-ui.js", "runtime UI")
+    icons_dir = BUNDLE_ROOT / "assets" / "icons"
     icons: dict[str, str] = {}
     try:
         for icon_path in sorted(icons_dir.glob("*.svg")):
