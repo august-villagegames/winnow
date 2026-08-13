@@ -177,29 +177,37 @@ upward swipe, `ArrowUp`, or `S` means skip. Reactions are final and the
 completed round automatically becomes a summary.
 
 The local profile infers candidates from all reacted options across history and
-the current round. Likes and dislikes are evaluated independently, and a
-profile pattern requires at least two supporting selections of the same
-polarity. Boolean and category patterns require a frequency difference of at
-least 0.25 when both polarities have evidence; numeric patterns use a counted
-average when only one polarity has enough evidence and retain a directional
-trend when both sides provide a strong contrast. Skips and free-text factors do
-not create candidates.
+the current round. For boolean factors, each reaction votes for a preferred
+state: liking `true` or disliking `false` favors `true`, and liking `false` or
+disliking `true` favors `false`. A boolean pattern requires at least two votes
+and a two-thirds share for one state; tied or weaker evidence produces no
+boolean guidance. New boolean patterns use `like` polarity with `include` or
+`exclude` direction for the favored state. Category patterns require at least two supporting selections
+of the same polarity and a frequency difference of at least 0.25 when both
+polarities have evidence. Numeric patterns use a counted average when only one
+polarity has enough evidence and retain a directional trend when both sides
+provide a strong contrast. Skips and free-text factors do not create candidates.
 
 Persisted active patterns retain priority in the six available profile slots;
-new candidates fill only remaining slots. Numeric and boolean factors are
-exclusive: the first persisted pattern for either type wins, otherwise the
-first candidate in the runtime's deterministic order wins. Category factors
-may retain multiple values. An excluded numeric or boolean pattern reserves
-its factor for the current summary, so its restore control never appears beside
-an alternative preference; because exclusions are key-specific, a different
-candidate may be inferred in a later round. A persisted pattern remains in the
-profile even when the current evidence no longer produces it. The summary
-renders each active pattern as a compact pill with its support count. Removing
-a pill excludes only that same factor, polarity, direction, and semantic value
-from future guidance; the current summary keeps it available for restoration.
+new candidates fill only remaining slots. Numeric factors are exclusive: the
+first persisted pattern wins, otherwise the first candidate in the runtime's
+deterministic order wins. A boolean factor has at most one candidate, and a
+persisted boolean pattern remains active only while the current cumulative vote
+supports the same state. Category factors may retain multiple values. An
+excluded numeric or boolean pattern reserves its factor for the current
+summary, so its restore control never appears beside an alternative preference;
+because exclusions are key-specific, a different candidate may be inferred in
+a later round. Persisted numeric and category patterns remain in the profile
+even when the current evidence no longer produces them. The summary renders
+each active pattern as a compact pill with its support count. Removing a pill
+excludes only that same factor, polarity, direction, and semantic value from
+future guidance; the current summary keeps it available for restoration.
 
 Existing v4 seeds and continuations that contain multiple distinct numeric or
 boolean profile records remain valid legacy input. The runtime uses the first
-record in array order and every newly generated continuation serializes only
-that normalized winner. Rejecting legacy records requires a future protocol or
+numeric record in array order; a persisted boolean record remains active only
+when it agrees with the current vote. Every newly generated continuation
+serializes only that normalized winner. Legacy boolean records and exclusions
+retain their original favored-state meaning when compared with newly inferred
+boolean votes. Rejecting legacy records requires a future protocol or
 runtime-version migration.

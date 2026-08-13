@@ -32,8 +32,8 @@ test("profile scoring ignores skips and emits strong numeric and boolean pattern
   });
   assert.ok(patterns.length >= 2);
   assert.ok(patterns.some((pattern) => pattern.factorId === "price" && pattern.text.includes("higher prices")));
-  assert.ok(patterns.some((pattern) => pattern.factorId === "covers" && pattern.text.includes("include covers")));
-  assert.ok(patterns.some((pattern) => pattern.factorId === "covers" && pattern.supportCount === 3));
+  assert.ok(patterns.some((pattern) => pattern.factorId === "covers" && pattern.text.includes("reactions favor removable covers")));
+  assert.ok(patterns.some((pattern) => pattern.factorId === "covers" && pattern.supportCount === 5));
   assert.ok(patterns.every((pattern) => pattern.strength >= 0.2));
   const price = patterns.find((pattern) => pattern.factorId === "price" && pattern.polarity === "like");
   const covers = patterns.find((pattern) => pattern.factorId === "covers" && pattern.polarity === "like");
@@ -129,7 +129,7 @@ test("excluding a primary-factor insight never removes the primary factor", () =
   assert.ok(continuation.completedRounds[0].options.every((option) => option.values.some((value) => value.factorId === "price")));
 });
 
-test("profile requires two supporting selections for either polarity", () => {
+test("category patterns require two direct selections", () => {
   const patterns = core.computeProfile(seed, {
     "sofa-1": "like",
     "sofa-2": "dislike",
@@ -138,7 +138,7 @@ test("profile requires two supporting selections for either polarity", () => {
     "sofa-5": "skip",
     "sofa-6": "skip",
   });
-  assert.deepEqual(patterns, []);
+  assert.deepEqual(patterns.filter((pattern) => pattern.factorId === "seats"), []);
 });
 
 test("a single like does not create a like pattern when dislikes are plentiful", () => {
@@ -155,7 +155,7 @@ test("a single like does not create a like pattern when dislikes are plentiful",
   assert.ok(patterns.every((pattern) => !pattern.text.startsWith("1 liked")));
 });
 
-test("profile retains one boolean preference when both polarities have support", () => {
+test("boolean reactions that favor the same value combine into one preference", () => {
   const decisions = {
     "sofa-1": "like",
     "sofa-2": "dislike",
@@ -166,9 +166,60 @@ test("profile retains one boolean preference when both polarities have support",
   };
   const candidates = core.computeProfileCandidates(seed, decisions).filter((pattern) => pattern.factorId === "covers");
   const patterns = core.computeProfile(seed, decisions).filter((pattern) => pattern.factorId === "covers");
-  assert.equal(candidates.length, 2);
+  assert.equal(candidates.length, 1);
   assert.equal(patterns.length, 1);
   assert.equal(patterns[0].key, candidates[0].key);
+  assert.equal(patterns[0].value, true);
+  assert.equal(patterns[0].supportCount, 4);
+  assert.equal(patterns[0].strength, 1);
+});
+
+test("boolean preferences require a two-thirds majority of reaction votes", () => {
+  const tie = core.computeProfile(seed, {
+    "sofa-1": "like",
+    "sofa-2": "like",
+    "sofa-3": "dislike",
+    "sofa-4": "dislike",
+    "sofa-5": "skip",
+    "sofa-6": "skip",
+  }).filter((pattern) => pattern.factorId === "covers");
+  assert.deepEqual(tie, []);
+
+  const threeToTwo = core.computeProfile(seed, {
+    "sofa-1": "like",
+    "sofa-2": "dislike",
+    "sofa-3": "like",
+    "sofa-4": "like",
+    "sofa-5": "dislike",
+    "sofa-6": "skip",
+  }).filter((pattern) => pattern.factorId === "covers");
+  assert.deepEqual(threeToTwo, []);
+
+  const fourToTwo = core.computeProfile(seed, {
+    "sofa-1": "like",
+    "sofa-2": "dislike",
+    "sofa-3": "like",
+    "sofa-4": "dislike",
+    "sofa-5": "dislike",
+    "sofa-6": "like",
+  }).filter((pattern) => pattern.factorId === "covers");
+  assert.equal(fourToTwo.length, 1);
+  assert.equal(fourToTwo[0].value, true);
+  assert.equal(fourToTwo[0].supportCount, 4);
+  assert.equal(fourToTwo[0].strength, 2 / 3);
+
+  const fourToTwoFalse = core.computeProfile(seed, {
+    "sofa-1": "dislike",
+    "sofa-2": "like",
+    "sofa-3": "dislike",
+    "sofa-4": "like",
+    "sofa-5": "like",
+    "sofa-6": "dislike",
+  }).filter((pattern) => pattern.factorId === "covers");
+  assert.equal(fourToTwoFalse.length, 1);
+  assert.equal(fourToTwoFalse[0].value, false);
+  assert.equal(fourToTwoFalse[0].polarity, "like");
+  assert.equal(fourToTwoFalse[0].supportCount, 4);
 });
 
 test("numeric and boolean factors keep one preference while categories retain multiple values", () => {
@@ -192,7 +243,7 @@ test("numeric and boolean factors keep one preference while categories retain mu
   for (const factorId of ["price", "covers"]) {
     const factorCandidates = candidates.filter((pattern) => pattern.factorId === factorId);
     const factorPatterns = patterns.filter((pattern) => pattern.factorId === factorId);
-    assert.ok(factorCandidates.length >= 2);
+    assert.ok(factorCandidates.length >= 1);
     assert.equal(factorPatterns.length, 1);
     assert.equal(factorPatterns[0].key, factorCandidates[0].key);
   }
@@ -237,7 +288,7 @@ test("profile falls back when there is no repeated evidence", () => {
   assert.equal(core.FALLBACK_PROFILE, "More contrast is needed before Winnow can identify a pattern.");
 });
 
-test("persisted patterns survive when current evidence no longer qualifies", () => {
+test("persisted numeric patterns survive when current evidence no longer qualifies", () => {
   const decisions = {
     "sofa-1": "like",
     "sofa-2": "dislike",
@@ -246,13 +297,62 @@ test("persisted patterns survive when current evidence no longer qualifies", () 
     "sofa-5": "like",
     "sofa-6": "skip",
   };
-  const candidate = core.computeProfileCandidates(seed, decisions).find((pattern) => pattern.factorId === "covers" && pattern.polarity === "like");
+  const candidate = core.computeProfileCandidates(seed, decisions).find((pattern) => pattern.factorId === "price" && pattern.polarity === "like");
   const continued = core.clone(seed);
   continued.profilePatterns = [core.profilePatternRecord(candidate)];
   const persisted = core.computeProfile(continued, Object.fromEntries(seed.round.options.map((option) => [option.id, "skip"])), continued.profilePatterns, []);
   assert.equal(persisted.length, 1);
   assert.equal(persisted[0].key, candidate.key);
-  assert.equal(persisted[0].compactLabel, "Removable covers");
+  assert.equal(persisted[0].compactLabel, "Higher prices");
+});
+
+test("persisted boolean preferences withdraw when cumulative evidence loses its majority", () => {
+  const priorDecisions = {
+    "sofa-1": "like",
+    "sofa-2": "dislike",
+    "sofa-3": "like",
+    "sofa-4": "dislike",
+    "sofa-5": "skip",
+    "sofa-6": "skip",
+  };
+  const candidate = core.computeProfile(seed, priorDecisions).find((pattern) => pattern.factorId === "covers");
+  const continued = core.clone(seed);
+  const completedRound = core.clone(seed.round);
+  completedRound.verdicts = completedRound.options.map((option) => ({ optionId: option.id, decision: priorDecisions[option.id] }));
+  continued.history = [completedRound];
+  continued.round.number = 2;
+  continued.profilePatterns = [core.profilePatternRecord(candidate)];
+  const oppositeDecisions = Object.fromEntries(continued.round.options.map((option) => {
+    const covers = option.values.find((value) => value.factorId === "covers").value;
+    return [option.id, covers ? "dislike" : "like"];
+  }));
+  const patterns = core.computeProfile(continued, oppositeDecisions, continued.profilePatterns, []);
+  assert.deepEqual(patterns.filter((pattern) => pattern.factorId === "covers"), []);
+});
+
+test("legacy boolean exclusions remain effective after normalized vote inference", () => {
+  const decisions = {
+    "sofa-1": "like",
+    "sofa-2": "dislike",
+    "sofa-3": "like",
+    "sofa-4": "dislike",
+    "sofa-5": "skip",
+    "sofa-6": "skip",
+  };
+  const legacyExclusion = core.profilePatternKey("covers", "dislike", "exclude", false);
+  const continuation = core.buildContinuation(seed, decisions, "f".repeat(64), "https://example.here.now/round-1", [legacyExclusion]);
+  assert.deepEqual(continuation.profilePatterns.filter((pattern) => pattern.factorId === "covers"), []);
+  const display = core.computeProfileDisplay(seed, decisions, [], [legacyExclusion]);
+  assert.ok(display.some((pattern) => pattern.factorId === "covers"));
+  assert.ok(!core.activeProfilePatterns(display, [legacyExclusion]).some((pattern) => pattern.factorId === "covers"));
+
+  const successor = core.clone(seed);
+  successor.history = continuation.completedRounds;
+  successor.round.number = continuation.nextRoundNumber;
+  successor.profilePatterns = continuation.profilePatterns;
+  successor.profileExclusions = continuation.profileExclusions;
+  const patterns = core.computeProfile(successor, Object.fromEntries(successor.round.options.map((option) => [option.id, "skip"])));
+  assert.deepEqual(patterns.filter((pattern) => pattern.factorId === "covers"), []);
 });
 
 test("persisted patterns keep priority over six newly inferred candidates", () => {
@@ -263,7 +363,7 @@ test("persisted patterns keep priority over six newly inferred candidates", () =
     "sofa-4": "dislike",
     "sofa-5": "like",
     "sofa-6": "skip",
-  }).find((pattern) => pattern.factorId === "covers" && pattern.polarity === "like");
+  }).find((pattern) => pattern.factorId === "price" && pattern.polarity === "like");
   const persisted = core.profilePatternRecord(candidate);
   const newCandidates = Array.from({ length: 6 }, (_, index) => ({
     ...candidate,
@@ -426,6 +526,7 @@ test("continuation handoff uses selected profile guidance and keeps the controls
   assert.match(runtimeUi, /HTML may be compiled only in memory as part of publishing/);
   assert.match(runtimeUi, /data-profile-toggle/);
   assert.match(runtimeUi, /profileExclusions/);
+  assert.match(runtimeUi, /Core\.activeProfilePatterns\(\[pattern\], state\.profileExclusions\)/);
   assert.match(runtimeUi, /profilePatterns/);
   assert.match(runtimeUi, /Copy continuation\.profilePatterns exactly/);
   assert.match(runtimeCore, /No profile patterns are selected for the next round/);

@@ -419,19 +419,24 @@
 
   function renderProfile(patterns) {
     if (!patterns.length) return `<p class="profile-empty">${Core.FALLBACK_PROFILE}</p>`;
-    const exclusions = new Set(state.profileExclusions);
     return `<p class="profile-hint">Remove any pattern you don’t want to guide future rounds.</p><ul class="profile-list">${patterns.map((pattern) => {
-      const excluded = exclusions.has(pattern.key);
+      const excluded = !Core.activeProfilePatterns([pattern], state.profileExclusions).length;
       const action = excluded ? "Restore" : "Exclude";
       const actionSuffix = excluded ? "for future rounds" : "from future rounds";
       return `<li class="profile-item ${pattern.tone}${excluded ? " is-excluded" : ""}"><span class="profile-icon">${icon(pattern.icon)}</span><span class="profile-label">${escapeHtml(pattern.compactLabel)}</span><span class="profile-support" aria-label="${pattern.supportCount} supporting selections">${pattern.supportCount}</span><button class="profile-control" type="button" data-profile-toggle data-profile-key="${escapeHtml(pattern.key)}" aria-pressed="${String(!excluded)}" aria-label="${escapeHtml(`${action} ${pattern.text} ${actionSuffix}`)}">${icon(excluded ? "rotate-ccw" : "x")}</button></li>`;
     }).join("")}</ul>`;
   }
 
-  function toggleProfileExclusion(key) {
+  function toggleProfileExclusion(pattern) {
     const exclusions = new Set(state.profileExclusions);
-    const restored = exclusions.delete(key);
-    if (!restored) exclusions.add(key);
+    const restored = !Core.activeProfilePatterns([pattern], exclusions).length;
+    if (restored) {
+      for (const key of exclusions) {
+        if (!Core.activeProfilePatterns([pattern], [key]).length) exclusions.delete(key);
+      }
+    } else {
+      exclusions.add(pattern.key);
+    }
     state = { ...state, revision: state.revision + 1, profileExclusions: [...exclusions] };
     clipboardStatus = "";
     persistState();
@@ -459,7 +464,8 @@
       <div class="summary-dock"><button class="continuation-button" type="button" id="continuation-button">Generate a better round →</button><p class="clipboard-status" id="clipboard-status" aria-live="polite">${escapeHtml(clipboardStatus)}</p></div>
       <div id="winnow-live" class="sr-only" aria-live="polite">${escapeHtml(persistenceWarning)}</div>
     </section>`;
-    app.querySelectorAll("[data-profile-toggle]").forEach((button) => button.addEventListener("click", () => toggleProfileExclusion(button.dataset.profileKey)));
+    const patternsByKey = new Map(patterns.map((pattern) => [pattern.key, pattern]));
+    app.querySelectorAll("[data-profile-toggle]").forEach((button) => button.addEventListener("click", () => toggleProfileExclusion(patternsByKey.get(button.dataset.profileKey))));
     app.querySelector("#continuation-button").addEventListener("click", copyContinuation);
     bindImageFallbacks();
     announce(persistenceWarning);
