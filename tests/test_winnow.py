@@ -791,8 +791,30 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn("rotate-ccw", html)
         self.assertIn("font-size: 12px;", html)
         self.assertIn("--type-base: 1rem;", html)
+        self.assertIn('content="width=device-width, initial-scale=1, viewport-fit=cover"', html)
         self.assertIn("connect-src 'none'", html)
         self.assertNotIn("fetch(", html)
+
+    def test_runtime_reserves_safe_area_with_fallbacks_at_each_layout_boundary(self):
+        css = (SKILL_DIR / "assets" / "runtime.css").read_text(encoding="utf-8")
+        for selector, top in ((".screen", "30px"), (".summary-screen", "30px")):
+            block = re.search(rf"{re.escape(selector)}\s*\{{(.*?)\n\}}", css, re.DOTALL)
+            self.assertIsNotNone(block)
+            rules = block.group(1)
+            self.assertIn(f"padding: {top} 18px 18px;", rules)
+            self.assertIn("padding-top: calc(30px + env(safe-area-inset-top, 0px));", rules)
+            self.assertIn("padding-right: calc(18px + env(safe-area-inset-right, 0px));", rules)
+            self.assertIn("padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));", rules)
+            self.assertIn("padding-left: calc(18px + env(safe-area-inset-left, 0px));", rules)
+
+        viewer = re.search(r"\.image-viewer-panel\s*\{(.*?)\n\}", css, re.DOTALL)
+        self.assertIsNotNone(viewer)
+        self.assertIn("padding: 20px 18px 18px;", viewer.group(1))
+        self.assertIn("padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));", viewer.group(1))
+
+        dots = re.search(r"\.image-viewer-dots\s*\{(.*?)\n\}", css, re.DOTALL)
+        self.assertIsNotNone(dots)
+        self.assertNotIn("safe-area-inset-bottom", dots.group(1))
 
     def test_runtime_uses_a_twelve_pixel_rem_typography_scale(self):
         css = (SKILL_DIR / "assets" / "runtime.css").read_text(encoding="utf-8")
