@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/august-villagegames/winnow/v0.1.0/references/seed.schema.json",
+  "$id": "https://raw.githubusercontent.com/august-villagegames/winnow/v0.2.0/references/seed.schema.json",
   "title": "Portable Winnow v4 session seed",
   "type": "object",
   "additionalProperties": false,

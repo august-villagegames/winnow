@@ -1,0 +1,37 @@
+name: Schema identity
+
+on:
+  pull_request:
+    paths:
+      - references/seed.schema.json
+      - scripts/check_schema_identity.py
+      - tests/test_winnow.py
+      - .github/workflows/schema-identity.yml
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  schema-change:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check schema identity
+        run: python3 scripts/check_schema_identity.py --base-ref "${{ github.event.pull_request.base.sha }}"
+
+  release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: "${{ github.ref }}"
+      - name: Verify released schema artifact
+        run: python3 scripts/check_schema_identity.py --verify-tag "${{ github.ref_name }}" --verify-remote

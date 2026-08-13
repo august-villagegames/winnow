@@ -10,6 +10,42 @@ The canonical standalone repository is
 `portable-poc/` inside the full `winnow-dev` repository for integration work.
 Commands below assume this directory is the current working directory.
 
+## Install and update lifecycle
+
+Install Winnow with the Skills CLI from the canonical repository:
+
+```sh
+npx skills add august-villagegames/winnow --skill winnow
+```
+
+By default this installs a project skill. Add `-g` for a global installation:
+
+```sh
+npx skills add august-villagegames/winnow --skill winnow -g
+```
+
+Update an installed Winnow skill explicitly between tasks:
+
+```sh
+npx skills update winnow
+npx skills update winnow -g
+```
+
+The installed revision is identified by the canonical repository ref or commit
+and the source and content state recorded by the Skills CLI. An update applies
+to newly started tasks; finish an active task with the skill revision it
+already loaded rather than mixing revisions during a session. Package or
+documentation changes that preserve `schemaVersion` and `runtimeVersion` are
+compatible with existing hosted sessions and continuations. Changes to the
+seed or continuation contract require an explicit version change and a
+migration decision. Hosted pages retain their embedded runtime and are not
+retroactively updated.
+
+The repository keeps both supported project skill paths: `.agents/skills/winnow/`
+is the canonical source for Codex and the cross-agent Skills CLI, while
+`.claude/skills/winnow/` is a symlink to the same directory for native Claude
+Code discovery.
+
 ## Quick start
 
 The normal initial-round workflow is one command:
