@@ -1,0 +1,31 @@
+name: Winnow contract smoke
+
+on:
+  pull_request:
+    paths:
+      - ".agents/skills/winnow/**"
+      - "README.md"
+      - "fixtures/**"
+      - "scripts/**"
+      - "tests/**"
+      - ".github/workflows/contract-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: python -B -m unittest discover -s tests -p 'test_*.py'
+      - run: node --test tests/*.test.mjs
+      - run: python .agents/skills/winnow/scripts/winnow.py validate fixtures/synthetic-seed.json
+      - run: python .agents/skills/winnow/scripts/winnow.py inspect-continuation fixtures/synthetic-continuation.json
+      - run: python .agents/skills/winnow/scripts/winnow.py validate-successor fixtures/synthetic-continuation.json fixtures/synthetic-successor-seed.json
