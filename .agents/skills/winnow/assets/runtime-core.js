@@ -165,16 +165,34 @@
 
   function categoryPattern(factor, decision, value, supportCount, strength) {
     const prefix = patternSupportPhrase(decision, supportCount);
-    if (factor.valueType === "boolean") {
-      const action = Boolean(value) ? "include" : "exclude";
-      return {
-        ...patternMeta(factor, decision, supportCount, strength, action, Boolean(value), null, formatValue(factor, Boolean(value))),
-        text: `${prefix} ${action} ${String(factor.label).toLowerCase()}`,
-      };
-    }
     return {
       ...patternMeta(factor, decision, supportCount, strength, "include", value, null, formatValue(factor, value)),
       text: `${prefix} include ${String(value).toLowerCase()}`,
+    };
+  }
+
+  function booleanPatternText(factor, value, supportCount) {
+    return `${supportCount} reactions favor ${formatValue(factor, value).toLowerCase()}`;
+  }
+
+  function booleanPattern(factor, rows) {
+    const votes = { true: 0, false: 0 };
+    for (const row of rows) {
+      if (typeof row.value !== "boolean") continue;
+      const preferredValue = row.decision === "like" ? row.value : !row.value;
+      votes[String(preferredValue)] += 1;
+    }
+    const totalVotes = votes.true + votes.false;
+    const value = votes.true === votes.false ? null : votes.true > votes.false;
+    if (value === null) return null;
+    const supportCount = votes[String(value)];
+    const strength = supportCount / totalVotes;
+    if (supportCount < MIN_PATTERN_SUPPORT || strength < (2 / 3)) return null;
+    const polarity = "like";
+    const direction = value ? "include" : "exclude";
+    return {
+      ...patternMeta(factor, polarity, supportCount, strength, direction, value, null, formatValue(factor, value)),
+      text: booleanPatternText(factor, value, supportCount),
     };
   }
 
@@ -204,6 +222,10 @@
 
   function patternForFactor(factor, rows) {
     const reacted = rows.filter((row) => valueComparable(row.value) && (row.decision === "like" || row.decision === "dislike"));
+    if (factor.valueType === "boolean") {
+      const pattern = booleanPattern(factor, reacted);
+      return pattern ? [pattern] : [];
+    }
     const patterns = [];
     const decisions = ["like", "dislike"];
     for (const decision of decisions) {
@@ -215,7 +237,7 @@
         if (pattern) patterns.push(pattern);
         continue;
       }
-      if (factor.valueType !== "boolean" && factor.valueType !== "category") continue;
+      if (factor.valueType !== "category") continue;
       const groups = new Map();
       for (const row of sameDecision) {
         const key = JSON.stringify(normalizePatternValue(row.value));
@@ -248,6 +270,29 @@
     return factor?.valueType === "number" || factor?.valueType === "boolean";
   }
 
+  function booleanPreferenceValue(record) {
+    return record.polarity === "like" ? Boolean(record.value) : !Boolean(record.value);
+  }
+
+  function booleanPatternIsExcluded(exclusions, pattern) {
+    if (exclusions.has(pattern.key)) return true;
+    for (const key of exclusions) {
+      try {
+        const record = JSON.parse(key);
+        if (
+          record &&
+          record.factorId === pattern.factorId &&
+          typeof record.value === "boolean" &&
+          (record.polarity === "like" || record.polarity === "dislike") &&
+          booleanPreferenceValue(record) === pattern.value
+        ) return true;
+      } catch (_) {
+        // Profile exclusions are opaque strings; non-pattern keys cannot match a boolean preference.
+      }
+    }
+    return false;
+  }
+
   function patternView(factors, record) {
     const factor = factors[record.factorId];
     if (!factor) return null;
@@ -272,13 +317,12 @@
       };
     }
     if (factor.valueType === "boolean") {
-      const action = Boolean(record.value) ? "include" : "exclude";
       return {
         ...record,
         compactLabel: formatValue(factor, Boolean(record.value)),
         tone: patternTone(record.polarity),
         icon: patternIcon(record.polarity),
-        text: `${prefix} ${action} ${String(factor.label).toLowerCase()}`,
+        text: booleanPatternText(factor, Boolean(record.value), record.supportCount),
       };
     }
     return {
@@ -375,6 +419,9 @@
     const seenExcluded = new Set();
     const reservedExclusiveFactors = new Set();
     const isExclusive = (pattern) => isExclusiveProfileFactor(factors[pattern.factorId]);
+    const isExcluded = (pattern) => factors[pattern.factorId]?.valueType === "boolean"
+      ? booleanPatternIsExcluded(excluded, pattern)
+      : excluded.has(pattern.key);
     const reserveExclusiveFactor = (pattern) => {
       if (!isExclusive(pattern)) return true;
       if (reservedExclusiveFactors.has(pattern.factorId)) return false;
@@ -388,10 +435,15 @@
       }
     };
     for (const record of persistedPatterns || []) {
-      const pattern = candidateByKey.get(record.key) || patternView(factors, record);
+      const factor = factors[record.factorId];
+      const booleanCandidate = factor?.valueType === "boolean"
+        ? (candidates || []).find((candidate) => candidate.factorId === record.factorId && candidate.value === booleanPreferenceValue(record))
+        : null;
+      if (factor?.valueType === "boolean" && !booleanCandidate) continue;
+      const pattern = candidateByKey.get(record.key) || booleanCandidate || patternView(factors, record);
       if (!pattern) continue;
       if (!reserveExclusiveFactor(pattern)) continue;
-      if (excluded.has(record.key)) {
+      if (isExcluded(pattern)) {
         if (includeExcluded) addExcluded(pattern);
         continue;
       }
@@ -401,13 +453,13 @@
       }
     }
     for (const pattern of candidates || []) {
-      if (excluded.has(pattern.key) && isExclusive(pattern) && reserveExclusiveFactor(pattern)) {
+      if (isExcluded(pattern) && isExclusive(pattern) && reserveExclusiveFactor(pattern)) {
         if (includeExcluded) addExcluded(pattern);
       }
     }
     for (const pattern of candidates || []) {
       if (isExclusive(pattern) && reservedExclusiveFactors.has(pattern.factorId)) continue;
-      if (excluded.has(pattern.key)) {
+      if (isExcluded(pattern)) {
         if (includeExcluded) addExcluded(pattern);
         continue;
       }
@@ -434,7 +486,7 @@
 
   function activeProfilePatterns(patterns, profileExclusions) {
     const excluded = new Set(profileExclusions || []);
-    return (patterns || []).filter((pattern) => !excluded.has(pattern.key));
+    return (patterns || []).filter((pattern) => !booleanPatternIsExcluded(excluded, pattern));
   }
 
   function profileGuidance(patterns, profileExclusions) {
