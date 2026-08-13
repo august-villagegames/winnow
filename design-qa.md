@@ -37,5 +37,5 @@ Final result: passed
 
 - `python3 -m unittest discover -s tests -v` — passed (15 tests).
 - `node --test tests/runtime-core.test.mjs` — passed (4 tests).
-- `python3 scripts/winnow.py validate fixtures/synthetic-seed.json` — passed.
-- `python3 scripts/winnow.py validate-successor fixtures/synthetic-continuation.json fixtures/synthetic-successor-seed.json` — passed.
+- `python3 .agents/skills/winnow/scripts/winnow.py validate fixtures/synthetic-seed.json` — passed.
+- `python3 .agents/skills/winnow/scripts/winnow.py validate-successor fixtures/synthetic-continuation.json fixtures/synthetic-successor-seed.json` — passed.

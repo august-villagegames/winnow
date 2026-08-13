@@ -6,11 +6,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
-const core = require("../assets/runtime-core.js");
+const core = require("../.agents/skills/winnow/assets/runtime-core.js");
 const root = dirname(fileURLToPath(import.meta.url));
 const seed = JSON.parse(readFileSync(join(root, "../fixtures/synthetic-seed.json"), "utf8"));
-const runtimeUi = readFileSync(join(root, "../assets/runtime-ui.js"), "utf8");
-const runtimeCore = readFileSync(join(root, "../assets/runtime-core.js"), "utf8");
+const runtimeUi = readFileSync(join(root, "../.agents/skills/winnow/assets/runtime-ui.js"), "utf8");
+const runtimeCore = readFileSync(join(root, "../.agents/skills/winnow/assets/runtime-core.js"), "utf8");
 
 test("typed formatting is runtime-owned", () => {
   const price = seed.round.factors.find((factor) => factor.id === "price");

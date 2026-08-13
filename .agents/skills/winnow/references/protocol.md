@@ -38,9 +38,10 @@ the same label, value type, and display definition. Option IDs, normalized
 titles, and canonical option URLs cannot be reused anywhere in a session.
 
 The standard JSON Schema expresses the record shape and array limit. The
-repository validator (`scripts/winnow.py`) is the enforcing validation path for
-cross-record invariants that standard JSON Schema cannot express, including
-unique `profilePattern.key` values and conflicts with `profileExclusions`.
+bundled validator (`$SKILL_DIR/scripts/winnow.py`) is the enforcing validation
+path for cross-record invariants that standard JSON Schema cannot express,
+including unique `profilePattern.key` values and conflicts with
+`profileExclusions`.
 
 `profileExclusions` is a runtime-owned array of opaque profile-pattern keys.
 It starts empty. The runtime uses it to remember insights the user has removed
@@ -134,22 +135,22 @@ option when the policy is `required`.
 The normal initial workflow is:
 
 ```sh
-python3 scripts/winnow.py publish seed.json
+python3 "$SKILL_DIR/scripts/winnow.py" publish seed.json
 ```
 
 For a later round, pass the copied continuation package:
 
 ```sh
-python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
+python3 "$SKILL_DIR/scripts/winnow.py" publish next-seed.json --continuation continuation.json
 ```
 
 Use the other commands only as optional diagnostics:
 
 ```sh
-python3 scripts/winnow.py validate seed.json
-python3 scripts/winnow.py verify-images seed.json
-python3 scripts/winnow.py inspect-continuation continuation.json
-python3 scripts/winnow.py validate-successor continuation.json next-seed.json
+python3 "$SKILL_DIR/scripts/winnow.py" validate seed.json
+python3 "$SKILL_DIR/scripts/winnow.py" verify-images seed.json
+python3 "$SKILL_DIR/scripts/winnow.py" inspect-continuation continuation.json
+python3 "$SKILL_DIR/scripts/winnow.py" validate-successor continuation.json next-seed.json
 ```
 
 Publishing is the only delivery workflow. The publisher compiles the page in

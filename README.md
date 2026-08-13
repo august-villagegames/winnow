@@ -10,12 +10,17 @@ The canonical standalone repository is
 `portable-poc/` inside the full `winnow-dev` repository for integration work.
 Commands below assume this directory is the current working directory.
 
+The installable skill bundle is `.agents/skills/winnow/`. It contains the
+skill instructions, protocol references, publisher, and runtime assets. The
+Claude Code path `.claude/skills/winnow` is kept as a symlink to that same
+bundle.
+
 ## Quick start
 
 The normal initial-round workflow is one command:
 
 ```sh
-python3 scripts/winnow.py publish seed.json
+python3 .agents/skills/winnow/scripts/winnow.py publish seed.json
 ```
 
 `publish` validates the seed, freshly verifies every unique image URL in the
@@ -29,8 +34,8 @@ invocation performs a fresh check; it does not create reusable state for
 `publish`.
 
 ```sh
-python3 scripts/winnow.py validate fixtures/synthetic-seed.json
-python3 scripts/winnow.py verify-images seed.json
+python3 .agents/skills/winnow/scripts/winnow.py validate fixtures/synthetic-seed.json
+python3 .agents/skills/winnow/scripts/winnow.py verify-images seed.json
 ```
 
 The included synthetic fixture uses reserved `example.com` image URLs, so it is
@@ -41,15 +46,15 @@ may be hosted on a different CDN from its cited source page.
 For a later round, publish the successor with its copied continuation package:
 
 ```sh
-python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
+python3 .agents/skills/winnow/scripts/winnow.py publish next-seed.json --continuation continuation.json
 ```
 
 Continuation inspection and successor validation are also available as optional
 diagnostics:
 
 ```sh
-python3 scripts/winnow.py inspect-continuation continuation.json
-python3 scripts/winnow.py validate-successor continuation.json next-seed.json
+python3 .agents/skills/winnow/scripts/winnow.py inspect-continuation continuation.json
+python3 .agents/skills/winnow/scripts/winnow.py validate-successor continuation.json next-seed.json
 ```
 
 The publish result includes the hosted URL and expiration, current-round image
@@ -59,8 +64,9 @@ return a local HTML file or path.
 
 ## Authoring contract
 
-Read `references/protocol.md` and `references/seed.schema.json` before authoring
-a seed. Sessions require images by default. Prefer one strong, source-backed
+Read `.agents/skills/winnow/references/protocol.md` and
+`.agents/skills/winnow/references/seed.schema.json` before authoring a seed.
+Sessions require images by default. Prefer one strong, source-backed
 image per option; use the supported 1–5 `images` range only when additional
 images add materially distinct, decision-relevant evidence. Use
 `session.imagePolicy.mode: "notApplicable"` with a reason only for a clearly
@@ -83,4 +89,5 @@ node --test tests/runtime-core.test.mjs
 
 Winnow-authored code and documentation are licensed under Apache-2.0. The
 bundled Space Grotesk font and Lucide icons retain their upstream licenses; see
-[NOTICE](NOTICE), `assets/fonts/OFL.txt`, and `assets/icons/LICENSE`.
+[NOTICE](NOTICE), `.agents/skills/winnow/assets/fonts/OFL.txt`, and
+`.agents/skills/winnow/assets/icons/LICENSE`.

@@ -6,8 +6,11 @@ description: Research and publish a strict, self-contained anonymous Winnow v4 c
 # Winnow portable skill
 
 Use this skill for an evidence-backed comparison with structured rounds and a
-shareable session URL. Read `references/protocol.md` and
-`references/seed.schema.json` before authoring data.
+shareable session URL. Resolve `SKILL_DIR` as the directory containing this
+file, then read `$SKILL_DIR/references/protocol.md` and
+`$SKILL_DIR/references/seed.schema.json` before authoring data. Invoke the
+bundled publisher with its absolute path, `$SKILL_DIR/scripts/winnow.py`; do
+not assume the user's current working directory is the skill directory.
 During Winnow planning, including between rounds, speak to the user only when
 input is needed or an issue or hurdle blocks progress.
 
@@ -32,7 +35,7 @@ input is needed or an issue or hurdle blocks progress.
 5. Publish through the normal one-command workflow:
 
    ```sh
-   python3 scripts/winnow.py publish seed.json
+   python3 "$SKILL_DIR/scripts/winnow.py" publish seed.json
    ```
 
    `publish` validates the seed, freshly fetches each unique current-round image
@@ -65,7 +68,7 @@ policy, and collect at least one verified image for every new option when
 images are required. Then run:
 
 ```sh
-python3 scripts/winnow.py publish next-seed.json --continuation continuation.json
+python3 "$SKILL_DIR/scripts/winnow.py" publish next-seed.json --continuation continuation.json
 ```
 
 Always create a new anonymous URL. Never update or depend on the parent URL,
