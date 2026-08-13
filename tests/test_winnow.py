@@ -85,10 +85,18 @@ def verified_image(url: str) -> dict:
 
 
 class RepositoryChecks(unittest.TestCase):
-    def test_winnow_skill_copies_are_identical(self):
-        canonical = (ROOT / ".agents" / "skills" / "winnow" / "SKILL.md").read_bytes()
-        claude = (ROOT / ".claude" / "skills" / "winnow" / "SKILL.md").read_bytes()
-        self.assertEqual(claude, canonical, "Claude and agent Winnow skills must stay byte-for-byte identical")
+    def test_winnow_skill_paths_share_canonical_directory(self):
+        canonical_dir = ROOT / ".agents" / "skills" / "winnow"
+        claude_dir = ROOT / ".claude" / "skills" / "winnow"
+        canonical = canonical_dir / "SKILL.md"
+        claude = claude_dir / "SKILL.md"
+        self.assertTrue(canonical.is_file())
+        self.assertTrue(claude_dir.is_symlink(), "Claude skill path must point to the canonical skill directory")
+        self.assertEqual(claude_dir.resolve(), canonical_dir.resolve())
+        self.assertEqual(claude.read_bytes(), canonical.read_bytes())
+        skill_text = canonical.read_text(encoding="utf-8")
+        self.assertIn("npx skills add august-villagegames/winnow --skill winnow", skill_text)
+        self.assertIn("npx skills update winnow", skill_text)
 
     def test_schema_declares_winnow_key_uniqueness_boundary(self):
         profile_patterns = SCHEMA["$defs"]["profilePatterns"]
