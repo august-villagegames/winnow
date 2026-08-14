@@ -21,6 +21,14 @@ test("typed formatting is runtime-owned", () => {
   assert.equal(core.formatValue(delivery, 2), "2 weeks");
 });
 
+test("carousel media height preserves ratios within the stage budget", () => {
+  assert.equal(core.computeCarouselMediaHeight({ availableWidth: 440, naturalWidth: 1600, naturalHeight: 900, stageBudget: 600 }), 248);
+  assert.equal(core.computeCarouselMediaHeight({ availableWidth: 440, naturalWidth: 400, naturalHeight: 1200, stageBudget: 600 }), 420);
+  assert.equal(core.computeCarouselMediaHeight({ availableWidth: 440, naturalWidth: 3000, naturalHeight: 100, stageBudget: 600 }), 128);
+  assert.equal(core.computeCarouselMediaHeight({ availableWidth: 440, naturalWidth: 1600, naturalHeight: 900, stageBudget: 90 }), 90);
+  assert.equal(core.computeCarouselMediaHeight({ availableWidth: 300, naturalWidth: 1600, naturalHeight: 900, stageBudget: 600 }), 169);
+});
+
 test("profile scoring ignores skips and emits strong numeric and boolean patterns", () => {
   const patterns = core.computeProfile(seed, {
     "sofa-1": "like",

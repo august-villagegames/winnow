@@ -60,6 +60,18 @@
     return String(value);
   }
 
+  function computeCarouselMediaHeight({ availableWidth, naturalWidth, naturalHeight, stageBudget, minHeight = 128, maxHeight = 420 }) {
+    const width = Number(availableWidth);
+    const sourceWidth = Number(naturalWidth);
+    const sourceHeight = Number(naturalHeight);
+    const budget = Number(stageBudget);
+    const boundedMax = Math.max(0, Math.min(Number.isFinite(budget) ? budget : maxHeight, Number(maxHeight)));
+    const boundedMin = Math.min(Math.max(0, Number(minHeight)), boundedMax);
+    if (!boundedMax || !width || !sourceWidth || !sourceHeight) return Math.round(boundedMin);
+    const idealHeight = width * sourceHeight / sourceWidth;
+    return Math.round(Math.max(boundedMin, Math.min(idealHeight, boundedMax)));
+  }
+
   function factorDefinition(factor) {
     return JSON.stringify({ id: factor.id, label: factor.label, valueType: factor.valueType, display: factor.display });
   }
@@ -540,6 +552,7 @@
     clone,
     normalizeUrl,
     formatValue,
+    computeCarouselMediaHeight,
     profilePatternKey,
     profilePatternRecord,
     validateRuntimeSeed,
