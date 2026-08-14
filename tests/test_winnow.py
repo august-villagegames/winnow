@@ -858,6 +858,26 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn("object-fit: contain", html)
         self.assertNotIn("__WINNOW_", html)
 
+    def test_runtime_carousel_supports_stage_aware_dynamic_ratios(self):
+        css = (SKILL_DIR / "assets" / "runtime.css").read_text(encoding="utf-8")
+        ui = (SKILL_DIR / "assets" / "runtime-ui.js").read_text(encoding="utf-8")
+        self.assertNotIn("aspect-ratio: 16 / 9", css)
+        self.assertIn("height: var(--carousel-height", css)
+        self.assertIn("object-fit: contain", css)
+        self.assertIn("min-height: 0;", css)
+        self.assertIn("transition: height 220ms ease;", css)
+        self.assertIn("ResizeObserver", ui)
+        self.assertIn("stageBudget", ui)
+        self.assertIn('image?.dataset.carouselState === "error"', ui)
+        self.assertIn("Math.min(128, Math.min(420, stageBudget()))", ui)
+        self.assertIn("requestToken", ui)
+        self.assertIn("pendingIndex ?? current", ui)
+        self.assertIn("image.decode", ui)
+        self.assertIn("transitionTimer", ui)
+        self.assertIn("reducedMotion", ui)
+        self.assertIn("setMediaHeight(current, false);", ui)
+        self.assertIn('slide.toggleAttribute("aria-hidden", !active)', ui)
+
     def test_later_round_publish_requires_continuation(self):
         with self.assertRaises(winnow.ValidationError):
             winnow.publish(fixture("synthetic-successor-seed.json"), endpoint="https://mock.here.now/api/v1/publish")

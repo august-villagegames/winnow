@@ -234,6 +234,7 @@
 
   function bindImageFallbacks() {
     app.querySelectorAll("img[data-image]").forEach((image) => image.addEventListener("error", () => {
+      image.dataset.carouselState = "error";
       image.hidden = true;
       image.parentElement?.querySelector(".image-fallback")?.removeAttribute("hidden");
       announce(`Image unavailable: ${image.alt || "this option"}.`);
@@ -242,23 +243,123 @@
 
   function bindCarousels() {
     app.querySelectorAll("[data-carousel]").forEach((carousel) => {
+      const viewport = carousel.querySelector(".carousel-viewport");
+      const stage = carousel.closest(".deck-stage");
+      const card = carousel.closest(".option-card");
+      if (!viewport || !card) return;
+
       let current = 0;
+      let pendingIndex = null;
+      let requestToken = 0;
+      let transitionTimer = null;
       let pointerStartX = null;
       const slides = () => [...carousel.querySelectorAll("[data-carousel-slide]")];
       const dots = () => [...carousel.querySelectorAll("[data-carousel-dot]")];
-      const update = (nextIndex) => {
+      const readyPromises = new WeakMap();
+
+      const normalizeIndex = (index) => {
+        const count = slides().length;
+        return count ? ((index % count) + count) % count : 0;
+      };
+
+      const numberValue = (value) => {
+        const number = Number.parseFloat(value);
+        return Number.isFinite(number) ? number : 0;
+      };
+
+      const outerHeight = (element) => {
+        if (!element) return 0;
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return rect.height + numberValue(style.marginTop) + numberValue(style.marginBottom);
+      };
+
+      const stageBudget = () => {
+        const stageHeight = stage?.clientHeight || viewport.clientHeight || window.innerHeight;
+        const cardStyle = window.getComputedStyle(card);
+        const cardInset = numberValue(cardStyle.paddingTop) + numberValue(cardStyle.paddingBottom) + numberValue(cardStyle.borderTopWidth) + numberValue(cardStyle.borderBottomWidth);
+        const heading = card.querySelector(".option-heading");
+        const description = card.querySelector(".option-description");
+        const factors = card.querySelector(".factor-values");
+        const factorMinimum = factors ? Math.min(factors.scrollHeight, 44) : 0;
+        const carouselStyle = window.getComputedStyle(carousel);
+        return Math.max(0, stageHeight - cardInset - outerHeight(heading) - outerHeight(description) - factorMinimum - numberValue(carouselStyle.marginBottom));
+      };
+
+      const imageFor = (index) => slides()[normalizeIndex(index)]?.querySelector(".option-image");
+
+      const markImageError = (image) => {
+        if (!image) return;
+        image.dataset.carouselState = "error";
+        image.hidden = true;
+        image.parentElement?.querySelector(".image-fallback")?.removeAttribute("hidden");
+      };
+
+      const waitForImage = (image) => {
+        if (!image) return Promise.resolve();
+        if (image.dataset.carouselState === "error" || (image.complete && image.naturalWidth === 0)) {
+          markImageError(image);
+          return Promise.resolve();
+        }
+        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+          image.dataset.carouselState = "ready";
+          return Promise.resolve();
+        }
+        if (readyPromises.has(image)) return readyPromises.get(image);
+        image.loading = "eager";
+        const promise = new Promise((resolve) => {
+          let settled = false;
+          const finish = (state) => {
+            if (settled) return;
+            settled = true;
+            image.dataset.carouselState = state;
+            if (state === "error") markImageError(image);
+            resolve();
+          };
+          image.addEventListener("load", () => finish("ready"), { once: true });
+          image.addEventListener("error", () => finish("error"), { once: true });
+          if (image.complete) window.setTimeout(() => finish(image.naturalWidth > 0 ? "ready" : "error"), 0);
+        }).then(async () => {
+          if (image.dataset.carouselState === "ready" && typeof image.decode === "function") {
+            try { await image.decode(); } catch (_) { /* The loaded bitmap is still usable. */ }
+          }
+        });
+        readyPromises.set(image, promise);
+        return promise;
+      };
+
+      const mediaHeight = (index) => {
+        const image = imageFor(index);
+        if (image && image.dataset.carouselState !== "ready" && image.dataset.carouselState !== "error" && !image.naturalWidth) return null;
+        if (image?.dataset.carouselState === "error") return Math.min(128, Math.min(420, stageBudget()));
+        return Core.computeCarouselMediaHeight({
+          availableWidth: viewport.clientWidth || carousel.clientWidth,
+          naturalWidth: image?.naturalWidth || 1,
+          naturalHeight: image?.naturalHeight || 1,
+          stageBudget: stageBudget(),
+          minHeight: 128,
+          maxHeight: 420,
+        });
+      };
+
+      const setMediaHeight = (index, animate = true) => {
+        const height = mediaHeight(index);
+        if (height === null) {
+          if (index === current) viewport.style.removeProperty("--carousel-height");
+          return;
+        }
+        if (!animate) viewport.classList.add("is-resizing");
+        viewport.style.setProperty("--carousel-height", `${height}px`);
+        if (!animate) window.requestAnimationFrame(() => viewport.classList.remove("is-resizing"));
+      };
+
+      const syncControls = () => {
         const currentSlides = slides();
         if (!currentSlides.length) {
           carousel.remove();
           return;
         }
-        current = ((nextIndex % currentSlides.length) + currentSlides.length) % currentSlides.length;
         carousel.setAttribute("data-carousel-index", String(current));
-        currentSlides.forEach((slide, index) => {
-          const active = index === current;
-          slide.classList.toggle("is-active", active);
-          slide.toggleAttribute("aria-hidden", !active);
-        });
         const activeOriginalIndex = Number(currentSlides[current].dataset.carouselSlide);
         dots().forEach((dot) => {
           const active = Number(dot.dataset.carouselDot) === activeOriginalIndex;
@@ -272,10 +373,94 @@
         const dotsContainer = carousel.querySelector("[data-carousel-dots]");
         if (dotsContainer) dotsContainer.hidden = currentSlides.length < 2;
       };
-      const move = (offset) => update(current + offset);
+
+      const finishTransition = () => {
+        if (transitionTimer !== null) window.clearTimeout(transitionTimer);
+        transitionTimer = null;
+        slides().forEach((slide, index) => {
+          const active = index === current;
+          slide.classList.toggle("is-active", active);
+          slide.classList.remove("is-entering", "is-leaving");
+          slide.style.removeProperty("--slide-enter-x");
+          slide.style.removeProperty("--slide-exit-x");
+          slide.toggleAttribute("aria-hidden", !active);
+        });
+      };
+
+      const commit = (nextIndex, direction) => {
+        const currentSlides = slides();
+        if (!currentSlides.length) {
+          carousel.remove();
+          return;
+        }
+        const next = normalizeIndex(nextIndex);
+        if (next === current) {
+          pendingIndex = null;
+          syncControls();
+          setMediaHeight(current, false);
+          finishTransition();
+          return;
+        }
+        finishTransition();
+        const previous = current;
+        const outgoing = currentSlides[previous];
+        const incoming = currentSlides[next];
+        const sign = direction || (next > previous ? 1 : -1);
+        current = next;
+        pendingIndex = null;
+        syncControls();
+        incoming.style.setProperty("--slide-enter-x", `${sign * 12}px`);
+        outgoing.style.setProperty("--slide-exit-x", `${sign * -12}px`);
+        incoming.classList.add("is-active", "is-entering");
+        outgoing.classList.add("is-leaving");
+        incoming.setAttribute("aria-hidden", "false");
+        outgoing.setAttribute("aria-hidden", "true");
+        if (reducedMotion) {
+          setMediaHeight(current, false);
+          finishTransition();
+          return;
+        }
+        setMediaHeight(current);
+        window.requestAnimationFrame(() => incoming.classList.remove("is-entering"));
+        transitionTimer = window.setTimeout(finishTransition, 280);
+      };
+
+      const request = (nextIndex, direction = 0) => {
+        const target = normalizeIndex(nextIndex);
+        const token = ++requestToken;
+        pendingIndex = target;
+        waitForImage(imageFor(target)).then(() => {
+          if (token !== requestToken) return;
+          commit(target, direction);
+        });
+      };
+
+      const move = (offset) => request((pendingIndex ?? current) + offset, offset < 0 ? -1 : 1);
+      const handleResize = () => {
+        if (!carousel.isConnected) {
+          window.removeEventListener("resize", handleResize);
+          return;
+        }
+        setMediaHeight(current, false);
+      };
+
+      slides().forEach((slide, index) => {
+        const image = slide.querySelector(".option-image");
+        if (!image) return;
+        if (index === 0) image.loading = "eager";
+        image.addEventListener("load", () => {
+          image.dataset.carouselState = "ready";
+          if (index === current) setMediaHeight(index, false);
+        }, { once: true });
+        image.addEventListener("error", () => {
+          markImageError(image);
+          if (index === current) setMediaHeight(index, false);
+        }, { once: true });
+      });
+
       carousel.querySelector("[data-carousel-prev]")?.addEventListener("click", (event) => { event.stopPropagation(); move(-1); });
       carousel.querySelector("[data-carousel-next]")?.addEventListener("click", (event) => { event.stopPropagation(); move(1); });
-      dots().forEach((dot) => dot.addEventListener("click", (event) => { event.stopPropagation(); update(Number(dot.dataset.carouselDot)); }));
+      dots().forEach((dot) => dot.addEventListener("click", (event) => { event.stopPropagation(); request(Number(dot.dataset.carouselDot)); }));
       carousel.addEventListener("keydown", (event) => {
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
           event.preventDefault();
@@ -296,7 +481,14 @@
         }
       });
       carousel.addEventListener("pointercancel", () => { pointerStartX = null; });
-      update(0);
+      if (typeof ResizeObserver === "function") {
+        const observer = new ResizeObserver(handleResize);
+        observer.observe(stage || carousel);
+      } else {
+        window.addEventListener("resize", handleResize, { passive: true });
+      }
+      syncControls();
+      request(0);
     });
   }
 
