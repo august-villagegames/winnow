@@ -142,6 +142,8 @@ test("mocked competing browser responses converge without auto-revealing a new r
 test("rolling source does not include the legacy clipboard handoff", () => {
   assert.equal(source.includes("navigator.clipboard"), false);
   assert.equal(source.includes("Return to the agent"), false);
+  assert.match(source, /escapeHtml\(option\.description\.text\)/);
+  assert.doesNotMatch(source, /escapeHtml\(option\.description\)(?!\.)/);
   assert.match(source, /credentials: "omit"/);
   assert.match(source, /Authorization: `Bearer \$\{envelope\.browserCapability\}`/);
 });
