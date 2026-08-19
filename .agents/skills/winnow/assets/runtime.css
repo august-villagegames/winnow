@@ -705,7 +705,8 @@ a { color: inherit; }
   font-weight: 600;
 }
 
-.clipboard-status {
+.clipboard-status,
+.rolling-status {
   min-height: 15px;
   margin: 7px 0 0;
   color: var(--muted);

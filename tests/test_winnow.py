@@ -888,6 +888,72 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 2)
 
 
+class RollingCompilerTests(unittest.TestCase):
+    def test_rolling_compilation_has_a_closed_envelope_and_deterministic_markers(self):
+        seed = fixture()
+        browser_capability = "browser-capability-only-" + "b" * 48
+        provisional = winnow.build_rolling_html(
+            seed,
+            coordinator_origin="https://MCP.example.test/",
+            browser_capability=browser_capability,
+            published_revision=7,
+        )
+        final = winnow.build_rolling_html(
+            seed,
+            coordinator_origin="https://MCP.example.test/",
+            browser_capability=browser_capability,
+            published_revision=7,
+            expires_at="2026-08-09T12:00:00Z",
+        )
+        html = final.decode("utf-8")
+        self.assertEqual(len(provisional), len(final))
+        self.assertIn('name="winnow-rolling-version" content="1"', html)
+        self.assertIn('name="winnow-published-revision" content="7"', html)
+        self.assertIn('name="winnow-expires-at" content="2026-08-09T12:00:00.000Z"', html)
+        self.assertIn("connect-src https://mcp.example.test", html)
+        self.assertNotIn("connect-src 'none'", html)
+        self.assertNotIn("__WINNOW_", html)
+
+        envelope_match = re.search(r'id="winnow-rolling-page" type="application/octet-stream">([^<]+)<', html)
+        self.assertIsNotNone(envelope_match)
+        envelope = json.loads(base64.b64decode(envelope_match.group(1)).decode("utf-8"))
+        self.assertEqual(envelope, {
+            "protocol": "winnow.rolling-page",
+            "version": 1,
+            "coordinatorOrigin": "https://mcp.example.test/",
+            "browserCapability": browser_capability,
+            "publishedRevision": 7,
+        })
+        self.assertEqual(seed, fixture(), "rolling metadata must not mutate the closed seed")
+
+    def test_rolling_compiler_cannot_accept_agent_or_claim_material_and_legacy_stays_default(self):
+        seed = fixture()
+        legacy = winnow.build_html(seed).decode("utf-8")
+        self.assertNotIn("winnow-rolling-page", legacy)
+        self.assertIn("connect-src 'none'", legacy)
+        self.assertIn("navigator.clipboard.writeText", legacy)
+
+        html = winnow.build_session_html(
+            seed,
+            mode="rolling",
+            rolling_page={
+                "protocol": "winnow.rolling-page",
+                "version": 1,
+                "coordinatorOrigin": "https://mcp.example.test/",
+                "browserCapability": "browser-capability-only-" + "b" * 48,
+                "publishedRevision": 1,
+            },
+        ).decode("utf-8")
+        self.assertNotIn("agent-capability", html)
+        self.assertNotIn("claim-token", html)
+        with self.assertRaisesRegex(winnow.PublishError, "legacy compilation"):
+            winnow.build_session_html(seed, rolling_page={})
+        with self.assertRaisesRegex(winnow.PublishError, "invalid"):
+            winnow.validate_rolling_page_envelope({"protocol": "winnow.rolling-page"})
+        with self.assertRaisesRegex(winnow.PublishError, "invalid"):
+            winnow.build_rolling_html(seed, coordinator_origin="https://mcp.example.test/path", browser_capability="browser", published_revision=1)
+
+
 class PublisherTests(unittest.TestCase):
     def _publish_with_fake_site(
         self,
@@ -1098,6 +1164,45 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual([method for method, _url, _body, _headers in requests], ["POST", "PUT", "POST", "GET"])
         for _method, _url, _body, headers in requests:
             self.assertNotIn("Authorization", headers or {})
+
+    def test_internal_create_captures_claim_token_but_public_receipt_is_explicitly_allowlisted(self):
+        claim_token = "internal-claim-token-only"
+
+        def fake_json(url, method, body=None, *, headers=None, timeout=30):
+            self.assertEqual((url, method), ("https://mock.here.now/api/v1/publish", "POST"))
+            self.assertEqual(body["files"][0]["path"], "index.html")
+            return 200, {
+                "anonymous": True,
+                "slug": "internal-site",
+                "siteUrl": "https://mock.here.now/site",
+                "expiresAt": "2026-08-09T12:00:00.000Z",
+                "claimToken": claim_token,
+                "upload": {
+                    "versionId": "version-1",
+                    "uploads": [{"path": "index.html", "url": "https://mock.here.now/signed-upload", "headers": {}}],
+                    "finalizeUrl": "https://mock.here.now/signed-finalize",
+                },
+            }
+
+        internal = winnow.create_anonymous_site_internal(
+            b"<html></html>",
+            endpoint="https://mock.here.now/api/v1/publish",
+            require_claim_token=True,
+            request_json=fake_json,
+        )
+        self.assertEqual(internal.claim_token, claim_token)
+        self.assertNotIn(claim_token, repr(internal))
+        receipt = winnow.PublicPublicationReceipt(
+            site_url=internal.site_url,
+            expires_at=internal.expires_at,
+            session_id="session-1",
+            seed_hash="a" * 64,
+            round_number=1,
+            image_verification={"scope": "currentRound", "images": 4, "uniqueImages": 4},
+            timings_ms={"validation": 0, "imageVerification": 0, "sitePublication": 0, "total": 0},
+        ).as_dict()
+        self.assertNotIn(claim_token, json.dumps(receipt))
+        self.assertNotIn("claimToken", receipt)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,13 @@
+.git
+.github
+.playwright-cli
+.claude
+__pycache__
+automation
+fixtures
+tests
+*.py[cod]
+*.tmp
+remote/docs
+remote/probes
+remote/tests
