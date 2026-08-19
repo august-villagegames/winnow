@@ -46,6 +46,10 @@ test("rolling envelope is closed and coordinator origin is normalized", () => {
   assert.throws(() => rolling.validateEnvelope({ ...envelope, browserCapability: " capability" }), /invalid browser capability/);
 });
 
+test("rolling runtime exposes the browser bootstrap entry point", () => {
+  assert.equal(typeof rolling.bootstrap, "function");
+});
+
 test("session-keyed rolling state resumes only an exact embedded revision", () => {
   const initial = rolling.emptyState(seed, hash, 3);
   const selected = {
