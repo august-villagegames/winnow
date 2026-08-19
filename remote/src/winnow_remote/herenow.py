@@ -6,6 +6,7 @@ provider ordering and secret boundary that later coordinator code will call.
 
 from __future__ import annotations
 
+import datetime as dt
 import importlib.util
 import json
 import sys
@@ -66,6 +67,20 @@ def _response_expiration(value: Mapping[str, Any]) -> str | None:
     if isinstance(status, Mapping) and isinstance(status.get("expiresAt"), str):
         return status["expiresAt"]
     return None
+
+
+def _normalized_expiration_marker(expires_at: str) -> str:
+    """Match the portable compiler's fixed-width UTC expiration marker."""
+
+    try:
+        value = dt.datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except (AttributeError, ValueError) as exc:
+        raise HereNowError("HereNow expiration is invalid") from exc
+    return (
+        value.astimezone(dt.timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
 
 
 @dataclass(frozen=True)
@@ -135,11 +150,15 @@ def expected_live_markers(
 ) -> dict[str, tuple[str, str]]:
     """Build the only marker set accepted for a publication revision."""
 
+    normalized_expiration = _normalized_expiration_marker(expires_at)
     markers = {
         "session id": ("winnow-session-id", session_id),
         "seed hash": ("winnow-seed-hash", seed_hash),
         "runtime version": ("winnow-runtime-version", runtime_version),
-        "expiration": ("winnow-expires-at", expires_at),
+        # The portable compiler normalizes provider timestamps to UTC with
+        # millisecond precision before inserting this marker. HereNow may omit
+        # fractional seconds, so compare the compiler's canonical form.
+        "expiration": ("winnow-expires-at", normalized_expiration),
     }
     if rolling_version is not None:
         markers["rolling version"] = ("winnow-rolling-version", str(rolling_version))
