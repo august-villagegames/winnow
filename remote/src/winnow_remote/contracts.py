@@ -93,6 +93,23 @@ def _token(value: Any, path: str, *, maximum: int = 512) -> str:
     return value
 
 
+def _profile_key(value: Any, path: str) -> str:
+    """Accept the bounded canonical JSON profile keys emitted by the runtime.
+
+    Profile keys are opaque to the browser adapter and are checked against the
+    server-derived canonical set before they can affect a continuation.  Their
+    category values may legitimately contain internal spaces, unlike transport
+    tokens such as capabilities and handles.  Keep rejecting leading/trailing
+    whitespace and all control characters.
+    """
+
+    if not isinstance(value, str) or not value or len(value) > 500 or value != value.strip():
+        raise ContractError(f"{path}: expected bounded non-empty text")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ContractError(f"{path}: contains invalid characters")
+    return value
+
+
 def _uuid(value: Any, path: str) -> str:
     if not isinstance(value, str):
         raise ContractError(f"{path}: expected a UUID")
@@ -156,7 +173,7 @@ class BrowserNextRoundRequest:
         selected_raw = _required(raw, "selectedProfileKeys", "browser request")
         if not isinstance(selected_raw, list) or len(selected_raw) > MAX_PROFILE_SELECTIONS:
             raise ContractError("browser request.selectedProfileKeys: allows at most six keys")
-        selected = tuple(_token(item, f"browser request.selectedProfileKeys[{index}]", maximum=500) for index, item in enumerate(selected_raw))
+        selected = tuple(_profile_key(item, f"browser request.selectedProfileKeys[{index}]") for index, item in enumerate(selected_raw))
         if len(set(selected)) != len(selected):
             raise ContractError("browser request.selectedProfileKeys: duplicate keys are not allowed")
         return cls(
