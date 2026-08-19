@@ -155,6 +155,7 @@ class McpToolTests(unittest.TestCase):
         )
 
         async def request(payload):
+            body = json.dumps(payload).encode()
             scope = {
                 "type": "http",
                 "asgi": {"version": "3.0"},
@@ -164,11 +165,16 @@ class McpToolTests(unittest.TestCase):
                 "path": "/mcp",
                 "raw_path": b"/mcp",
                 "query_string": b"",
-                "headers": [(b"host", b"testserver"), (b"content-type", b"application/json"), (b"accept", b"application/json")],
+                "headers": [
+                    (b"host", b"testserver"),
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode("ascii")),
+                    (b"accept", b"application/json"),
+                ],
                 "client": ("203.0.113.7", 1234),
                 "server": ("testserver", 443),
             }
-            incoming = [{"type": "http.request", "body": json.dumps(payload).encode(), "more_body": False}]
+            incoming = [{"type": "http.request", "body": body, "more_body": False}]
             sent = []
 
             async def receive():

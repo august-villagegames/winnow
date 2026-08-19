@@ -80,7 +80,7 @@ class McpIngressGuard:
             headers = self._headers(scope)
             content_type = headers.get(b"content-type", b"").decode("latin-1", "ignore").split(";", 1)[0].strip().lower()
             declared = headers.get(b"content-length")
-            if content_type != "application/json" or (declared is not None and (not declared.isdecimal() or int(declared) > self._max_request_bytes)):
+            if content_type != "application/json" or (declared is not None and (not declared.isdigit() or int(declared) > self._max_request_bytes)):
                 await self._reject(send, 415 if content_type != "application/json" else 413)
                 return
             try:
