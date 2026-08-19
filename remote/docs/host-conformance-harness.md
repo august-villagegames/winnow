@@ -27,6 +27,11 @@ the assistant audience; host conformance must verify that it reaches the model
 without becoming ordinary assistant prose. The public URL cannot be used to
 recover this state.
 
+The `continue_requested` wait result is also a standard assistant-audience
+text block. It contains the exact fenced publish arguments plus the validated
+continuation needed to author `nextSeed`; a host must not rely on
+`structuredContent` alone at any stage of the loop.
+
 Before handing it to a host tester, verify the following without user content:
 
 - `POST /mcp` reaches the official Streamable HTTP application directly (no redirect, auth wall, HTML interstitial, proxy buffering, or path rewrite);

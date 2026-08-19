@@ -348,6 +348,51 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
             annotations=Annotations(audience=["assistant"]),
         )
 
+    def publish_handoff(event: Mapping[str, Any], session_handle: str) -> TextContent:
+        """Expose the one durable browser event in standard assistant content."""
+
+        continuation = event["continuation"]
+        parent = continuation["parent"]
+        arguments = {
+            "sessionHandle": session_handle,
+            "eventId": event["eventId"],
+            "publishFence": event["publishFence"],
+            "parentSeedHash": parent["seedHash"],
+        }
+        return TextContent(
+            type="text",
+            text=json.dumps(
+                {
+                    "nextAction": "Research a valid successor, then call publish_next_round with publishArguments and nextSeed.",
+                    "publishArguments": arguments,
+                    "continuation": continuation,
+                    "researchDeadline": event["researchDeadline"],
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+            annotations=Annotations(audience=["assistant"]),
+        )
+
+    def wait_result(receipt: Mapping[str, Any], session_handle: str, expected_round_number: int, expected_seed_hash: str) -> CallToolResult:
+        """Return every wait outcome as standard MCP content for host parity."""
+
+        status = receipt.get("status")
+        if status == "continue_requested":
+            return CallToolResult(content=[publish_handoff(receipt, session_handle)], structuredContent=dict(receipt))
+        if status in {"still_waiting", "publishing"}:
+            next_receipt = {
+                "roundNumber": receipt.get("roundNumber", expected_round_number),
+                "seedHash": receipt.get("seedHash", expected_seed_hash),
+            }
+            return CallToolResult(content=[wait_handoff(next_receipt, session_handle)], structuredContent=dict(receipt))
+        if status == "rejected":
+            return CallToolResult(content=[], structuredContent=dict(receipt), isError=True)
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(dict(receipt), separators=(",", ":"), sort_keys=True), annotations=Annotations(audience=["assistant"]))],
+            structuredContent=dict(receipt),
+        )
+
     @server.tool(
         name="create_winnow_session",
         description=(
@@ -380,8 +425,8 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False),
         structured_output=True,
     )
-    async def wait_for_continue(sessionHandle: str, expectedRoundNumber: int, expectedSeedHash: str, maxWaitSeconds: int, ctx: Context) -> dict[str, Any]:
-        return await service.wait(
+    async def wait_for_continue(sessionHandle: str, expectedRoundNumber: int, expectedSeedHash: str, maxWaitSeconds: int, ctx: Context) -> CallToolResult:
+        receipt = await service.wait(
             {
                 "sessionHandle": sessionHandle,
                 "expectedRoundNumber": expectedRoundNumber,
@@ -389,6 +434,7 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
                 "maxWaitSeconds": maxWaitSeconds,
             }
         )
+        return wait_result(receipt, sessionHandle, expectedRoundNumber, expectedSeedHash)
 
     @server.tool(
         name="publish_next_round",
