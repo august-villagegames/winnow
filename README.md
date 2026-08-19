@@ -109,6 +109,22 @@ the v4 seed/continuation state; do not add runtime network calls, agent-authored
 hidden candidates, ranking weights, raw source HTML, credentials, or
 continuation JSON to a seed. The hosted URL is the deliverable.
 
+## Remote rolling MCP
+
+Winnow Remote uses the same v4 seed but updates one anonymous HereNow page
+through a configured MCP connector. The agent shows the returned URL, waits in
+the same task, receives a strict continuation after the browser user requests
+another round, researches the successor itself, publishes it, and waits again.
+The normal remote flow has no copy/paste handoff or return-to-chat step. Its
+embedded session record includes committed comparison and verdict history;
+agent handles, browser capabilities, claim tokens, and publication fences are
+not public.
+
+Connector setup alone does not make a host supported. See
+[the host-conformance harness](remote/docs/host-conformance-harness.md) and
+[conformance record](remote/docs/conformance.md) for the release gate and
+current status.
+
 ## Tests
 
 ```sh

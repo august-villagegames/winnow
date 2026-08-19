@@ -168,6 +168,36 @@ and total work.
 Round 1 may publish without a continuation. Later rounds require the matching
 continuation and are always published as a new anonymous HereNow URL.
 
+## Remote rolling lifecycle
+
+Winnow Remote uses the same immutable v4 seed and continuation contracts, but
+it is a separate rolling transport. Its page envelope, browser capability,
+session handle, claim token, publication fence, and browser API are transport
+state—not seed fields—and must never be inserted into a seed or continuation.
+
+The host agent calls `create_winnow_session` with a valid round-one seed and
+the literal `mode: "rolling"`. It shows the returned public URL, retains the
+private wait arguments from the tool result, and enters `wait_for_continue` in
+that same task. Winnow itself does not research or invoke a model. When a
+browser user requests another round, the same host agent receives the strict
+continuation, researches a successor, calls `publish_next_round`, and waits
+again. A rolling update verifies the same anonymous HereNow URL before the
+browser offers the user a Continue action; the user never has to return to the
+chat, copy a continuation, or move to another page for the normal flow.
+
+The page's embedded seed, completed-round options, and committed verdict
+history are public to anyone with the anonymous URL. The user may deliberately
+exclude a profile pattern from future research, but a completed verdict is
+immutable.
+Session expiry, option-capacity completion, circuit transition, or a failed
+publication is terminal. A public URL cannot recover an agent session handle,
+claim token, browser capability, or publish fence.
+
+Host support is a release-gated claim, not an implication of connector setup.
+Each host must pass the public two-cycle, no-return, approval, cancellation,
+navigation, termination, ingress, and quota checks in
+`remote/docs/host-conformance-harness.md` before it is advertised.
+
 ## Runtime behavior
 
 The browser stores current-page verdict events and profile exclusions, keyed by

@@ -80,6 +80,11 @@ When the host has a configured Winnow Remote MCP connector, use its
 `create_winnow_session` tool for a rolling session instead of the local
 publisher. Supply the same valid round-one seed, with `mode` set to the exact
 literal string `"rolling"`; `"publish"` and `"live"` are not valid modes.
+Winnow Remote coordinates publication and browser state only: the host agent
+does the research for every round. The public page's embedded session record,
+including committed verdict history, is readable by anyone with its URL; claim
+tokens and agent/browser capabilities never belong in normal chat text, a URL,
+or a seed.
 Show the returned public URL, then call `wait_for_continue` in the same task.
 Use the `wait_for_continue` argument object supplied in the tool's text content
 for that call; do not quote it in normal chat text or put it in a URL.
