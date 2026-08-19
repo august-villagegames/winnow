@@ -8,6 +8,7 @@ import base64
 import concurrent.futures
 import datetime as dt
 import hashlib
+import html
 import json
 import math
 import re
@@ -25,6 +26,8 @@ PROTOCOL = "winnow.portable-session"
 SCHEMA_VERSION = 4
 RUNTIME_VERSION = "4.0.0"
 CONTINUATION_PROTOCOL = "winnow.continuation"
+ROLLING_PAGE_PROTOCOL = "winnow.rolling-page"
+ROLLING_PAGE_VERSION = 1
 PUBLISH_ENDPOINT = "https://here.now/api/v1/publish"
 CONTENT_TYPE = "text/html; charset=utf-8"
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
@@ -41,6 +44,10 @@ CORE_TOKEN = "__WINNOW_CORE_JS__"
 UI_TOKEN = "__WINNOW_UI_JS__"
 ICONS_TOKEN = "__WINNOW_ICONS__"
 FONT_TOKEN = "__WINNOW_FONT_DATA__"
+ROLLING_ENVELOPE_TOKEN = "__WINNOW_ROLLING_PAGE_BASE64__"
+COORDINATOR_ORIGIN_TOKEN = "__WINNOW_COORDINATOR_ORIGIN__"
+ROLLING_VERSION_TOKEN = "__WINNOW_ROLLING_VERSION__"
+PUBLISHED_REVISION_TOKEN = "__WINNOW_PUBLISHED_REVISION__"
 IMAGE_MAX_BYTES = 8 * 1024 * 1024
 IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
 _MAX_REQUIREMENTS = 5
@@ -65,6 +72,77 @@ class ValidationError(ValueError):
 
 class PublishError(RuntimeError):
     pass
+
+
+class InternalHereNowCreate:
+    """Server-only HereNow create response used by the remote publisher.
+
+    This type is intentionally separate from the receipt returned by the
+    portable CLI.  In particular, the anonymous claim token is operational
+    state, never presentation data.
+    """
+
+    __slots__ = ("site_url", "expires_at", "slug", "claim_token", "upload_url", "upload_headers", "finalize_url", "version_id")
+
+    def __init__(
+        self,
+        *,
+        site_url: str,
+        expires_at: str,
+        slug: str | None,
+        claim_token: str | None,
+        upload_url: str,
+        upload_headers: dict[str, Any],
+        finalize_url: str,
+        version_id: str,
+    ) -> None:
+        self.site_url = site_url
+        self.expires_at = expires_at
+        self.slug = slug
+        self.claim_token = claim_token
+        self.upload_url = upload_url
+        self.upload_headers = upload_headers
+        self.finalize_url = finalize_url
+        self.version_id = version_id
+
+    def __repr__(self) -> str:
+        return f"InternalHereNowCreate(site_url={self.site_url!r}, expires_at={self.expires_at!r}, slug={self.slug!r}, claim_token=<redacted>, version_id={self.version_id!r})"
+
+
+class PublicPublicationReceipt:
+    """Explicit allowlist for portable CLI publication output."""
+
+    __slots__ = ("site_url", "expires_at", "session_id", "seed_hash", "round_number", "image_verification", "timings_ms")
+
+    def __init__(
+        self,
+        *,
+        site_url: str,
+        expires_at: str,
+        session_id: str,
+        seed_hash: str,
+        round_number: int,
+        image_verification: dict[str, Any],
+        timings_ms: dict[str, int],
+    ) -> None:
+        self.site_url = site_url
+        self.expires_at = expires_at
+        self.session_id = session_id
+        self.seed_hash = seed_hash
+        self.round_number = round_number
+        self.image_verification = image_verification
+        self.timings_ms = timings_ms
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "siteUrl": self.site_url,
+            "expiresAt": self.expires_at,
+            "sessionId": self.session_id,
+            "seedHash": self.seed_hash,
+            "roundNumber": self.round_number,
+            "imageVerification": self.image_verification,
+            "timingsMs": self.timings_ms,
+        }
 
 
 def canonical_json(value: Any) -> bytes:
@@ -593,13 +671,81 @@ def _font_data() -> str:
         raise PublishError(f"Space Grotesk font is unavailable: {exc}") from exc
 
 
-def build_html(seed: dict[str, Any], *, expires_at: str | None = None, template_path: Path | None = None) -> bytes:
-    validate_seed(seed)
-    template = template_path or BUNDLE_ROOT / "assets" / "runtime.html"
-    html = _read_asset(template, "runtime template")
+def _coordinator_origin(value: Any) -> str:
+    """Normalize the one browser origin a rolling page may contact.
+
+    A coordinator URL is deliberately an origin, not a general endpoint URL.
+    Keeping paths, credentials, queries, and fragments out of the compiled
+    configuration makes the page CSP and all browser requests auditable.
+    """
+
+    if not isinstance(value, str) or not value or len(value) > 512:
+        raise PublishError("rolling coordinator origin is invalid")
+    try:
+        parsed = urllib.parse.urlsplit(value)
+    except ValueError as exc:
+        raise PublishError("rolling coordinator origin is invalid") from exc
+    host = (parsed.hostname or "").lower()
+    if (
+        parsed.scheme != "https"
+        or not host
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port not in {None, 443}
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+        or not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", host)
+    ):
+        raise PublishError("rolling coordinator origin is invalid")
+    return f"https://{host}/"
+
+
+def _browser_capability(value: Any) -> str:
+    if not isinstance(value, str) or not value or len(value) > 512 or value != value.strip():
+        raise PublishError("rolling browser capability is invalid")
+    if any(ord(character) < 33 or ord(character) == 127 for character in value):
+        raise PublishError("rolling browser capability is invalid")
+    return value
+
+
+def rolling_page_envelope(
+    *,
+    coordinator_origin: str,
+    browser_capability: str,
+    published_revision: int,
+) -> dict[str, Any]:
+    """Build the closed public configuration that sits outside a v4 seed."""
+
+    if not isinstance(published_revision, int) or isinstance(published_revision, bool) or published_revision < 1:
+        raise PublishError("rolling published revision is invalid")
+    return {
+        "protocol": ROLLING_PAGE_PROTOCOL,
+        "version": ROLLING_PAGE_VERSION,
+        "coordinatorOrigin": _coordinator_origin(coordinator_origin),
+        "browserCapability": _browser_capability(browser_capability),
+        "publishedRevision": published_revision,
+    }
+
+
+def validate_rolling_page_envelope(value: Any) -> dict[str, Any]:
+    """Parse the exact rolling envelope without extending the closed seed."""
+
+    if not isinstance(value, dict) or set(value) != {"protocol", "version", "coordinatorOrigin", "browserCapability", "publishedRevision"}:
+        raise PublishError("rolling page envelope is invalid")
+    if value.get("protocol") != ROLLING_PAGE_PROTOCOL or value.get("version") != ROLLING_PAGE_VERSION:
+        raise PublishError("rolling page envelope is invalid")
+    return rolling_page_envelope(
+        coordinator_origin=value["coordinatorOrigin"],
+        browser_capability=value["browserCapability"],
+        published_revision=value["publishedRevision"],
+    )
+
+
+def _runtime_assets(*, ui_name: str) -> tuple[str, str, str, dict[str, str]]:
     css = _read_asset(BUNDLE_ROOT / "assets" / "runtime.css", "runtime CSS")
     core = _read_asset(BUNDLE_ROOT / "assets" / "runtime-core.js", "runtime core")
-    ui = _read_asset(BUNDLE_ROOT / "assets" / "runtime-ui.js", "runtime UI")
+    ui = _read_asset(BUNDLE_ROOT / "assets" / ui_name, "runtime UI")
     icons_dir = BUNDLE_ROOT / "assets" / "icons"
     icons: dict[str, str] = {}
     try:
@@ -607,9 +753,23 @@ def build_html(seed: dict[str, Any], *, expires_at: str | None = None, template_
             icons[icon_path.stem] = icon_path.read_text(encoding="utf-8")
     except OSError as exc:
         raise PublishError(f"runtime icons are unavailable: {exc}") from exc
+    return css.replace(FONT_TOKEN, _font_data()), core, ui, icons
+
+
+def build_html(seed: dict[str, Any], *, expires_at: str | None = None, template_path: Path | None = None) -> bytes:
+    """Compile the legacy, clipboard-based one-off page.
+
+    This remains the public default used by the portable CLI.  Rolling pages
+    must call :func:`build_rolling_html` explicitly so coordinator capability
+    data can never accidentally enter legacy output.
+    """
+
+    validate_seed(seed)
+    template = template_path or BUNDLE_ROOT / "assets" / "runtime.html"
+    html = _read_asset(template, "runtime template")
+    css, core, ui, icons = _runtime_assets(ui_name="runtime-ui.js")
     digest = seed_hash(seed)
     encoded = base64.b64encode(canonical_json(seed)).decode("ascii")
-    css = css.replace(FONT_TOKEN, _font_data())
     ui = ui.replace(ICONS_TOKEN, json.dumps(icons, ensure_ascii=False, separators=(",", ":")))
     ui = ui.replace(SEED_TOKEN, encoded).replace(HASH_TOKEN, digest)
     replacements = {
@@ -629,6 +789,86 @@ def build_html(seed: dict[str, Any], *, expires_at: str | None = None, template_
     if any(token in html for token in remaining):
         raise PublishError("runtime template placeholders were not fully compiled")
     return html.encode("utf-8")
+
+
+def build_rolling_html(
+    seed: dict[str, Any],
+    *,
+    coordinator_origin: str,
+    browser_capability: str,
+    published_revision: int,
+    expires_at: str | None = None,
+) -> bytes:
+    """Compile a remote rolling page without changing the portable seed.
+
+    The browser-only capability is intentionally the sole secret-like value in
+    this public artifact.  Agent capabilities and HereNow claim tokens are not
+    accepted as parameters and therefore cannot be interpolated into it.
+    """
+
+    validate_seed(seed)
+    envelope = rolling_page_envelope(
+        coordinator_origin=coordinator_origin,
+        browser_capability=browser_capability,
+        published_revision=published_revision,
+    )
+    template = _read_asset(BUNDLE_ROOT / "assets" / "rolling-runtime.html", "rolling runtime template")
+    css, core, ui, icons = _runtime_assets(ui_name="rolling-runtime-ui.js")
+    digest = seed_hash(seed)
+    encoded_seed = base64.b64encode(canonical_json(seed)).decode("ascii")
+    encoded_envelope = base64.b64encode(canonical_json(envelope)).decode("ascii")
+    ui = ui.replace(ICONS_TOKEN, json.dumps(icons, ensure_ascii=False, separators=(",", ":")))
+    ui = ui.replace(SEED_TOKEN, encoded_seed).replace(HASH_TOKEN, digest)
+    replacements = {
+        HASH_TOKEN: digest,
+        SESSION_TOKEN: seed["session"]["id"],
+        RUNTIME_TOKEN: RUNTIME_VERSION,
+        EXPIRATION_PLACEHOLDER: _utc_expiration(expires_at),
+        ROLLING_ENVELOPE_TOKEN: encoded_envelope,
+        COORDINATOR_ORIGIN_TOKEN: html.escape(envelope["coordinatorOrigin"].rstrip("/"), quote=True),
+        ROLLING_VERSION_TOKEN: str(ROLLING_PAGE_VERSION),
+        PUBLISHED_REVISION_TOKEN: str(envelope["publishedRevision"]),
+        CSS_TOKEN: css,
+        CORE_TOKEN: core,
+        UI_TOKEN: ui,
+    }
+    for token, replacement in replacements.items():
+        if token not in template:
+            raise PublishError(f"rolling runtime template is missing placeholder {token}")
+        template = template.replace(token, replacement)
+    remaining = (
+        SEED_TOKEN,
+        HASH_TOKEN,
+        SESSION_TOKEN,
+        RUNTIME_TOKEN,
+        CSS_TOKEN,
+        CORE_TOKEN,
+        UI_TOKEN,
+        ICONS_TOKEN,
+        FONT_TOKEN,
+        ROLLING_ENVELOPE_TOKEN,
+        COORDINATOR_ORIGIN_TOKEN,
+        ROLLING_VERSION_TOKEN,
+        PUBLISHED_REVISION_TOKEN,
+    )
+    if any(token in template for token in remaining):
+        raise PublishError("rolling runtime template placeholders were not fully compiled")
+    return template.encode("utf-8")
+
+
+def build_session_html(seed: dict[str, Any], *, mode: str = "legacy", expires_at: str | None = None, rolling_page: dict[str, Any] | None = None) -> bytes:
+    """Select a legacy or rolling compiler with an explicit mode boundary."""
+
+    if mode == "legacy":
+        if rolling_page is not None:
+            raise PublishError("legacy compilation does not accept rolling configuration")
+        return build_html(seed, expires_at=expires_at)
+    if mode == "rolling":
+        if rolling_page is None:
+            raise PublishError("rolling compilation requires rolling configuration")
+        envelope = validate_rolling_page_envelope(rolling_page)
+        return build_rolling_html(seed, expires_at=expires_at, coordinator_origin=envelope["coordinatorOrigin"], browser_capability=envelope["browserCapability"], published_revision=envelope["publishedRevision"])
+    raise PublishError("unknown HTML compilation mode")
 
 
 def _current_image_entries(seed: dict[str, Any]) -> Iterable[tuple[str, dict[str, Any]]]:
@@ -789,8 +1029,119 @@ def _http_upload(url: str, html: bytes, headers: dict[str, Any] | None, *, timeo
         raise PublishError(f"here.now upload failed ({getattr(exc, 'code', 'network')})") from None
 
 
+def create_anonymous_site_internal(
+    html: bytes,
+    *,
+    endpoint: str = PUBLISH_ENDPOINT,
+    require_claim_token: bool = False,
+    request_json: Any = None,
+    client_header: str = "winnow-portable/2",
+) -> InternalHereNowCreate:
+    """Create an anonymous site and retain provider-only data internally.
+
+    Callers must deliberately construct a ``PublicPublicationReceipt`` rather
+    than serializing this value.  The legacy CLI leaves ``require_claim_token``
+    false so a provider response lacking a token retains its historic
+    create-only behavior; the remote service must set it true.
+    """
+
+    request = request_json or _http_json
+    status, created = request(
+        endpoint,
+        "POST",
+        {"files": [{"path": "index.html", "size": len(html), "contentType": CONTENT_TYPE}]},
+        headers={"X-HereNow-Client": client_header},
+    )
+    if status < 200 or status >= 300 or created.get("anonymous") is not True:
+        raise PublishError("here.now did not create an anonymous Site")
+    site_url = created.get("siteUrl")
+    expires_at = created.get("expiresAt")
+    if not isinstance(site_url, str):
+        raise PublishError("here.now create response is missing siteUrl")
+    if not isinstance(expires_at, str):
+        raise PublishError("here.now anonymous response is missing expiresAt")
+    slug = created.get("slug")
+    if slug is not None and (not isinstance(slug, str) or not slug):
+        raise PublishError("here.now create response has an invalid slug")
+    claim_token = created.get("claimToken")
+    if claim_token is not None and (not isinstance(claim_token, str) or not claim_token):
+        raise PublishError("here.now create response has an invalid claim token")
+    if require_claim_token and claim_token is None:
+        raise PublishError("here.now anonymous response is missing claim token")
+    try:
+        upload = _object(created.get("upload"), "publish.upload")
+        uploads = _array(upload.get("uploads"), "publish.upload.uploads")
+    except ValidationError as exc:
+        raise PublishError("here.now create response is missing upload metadata") from exc
+    matching = next((item for item in uploads if isinstance(item, dict) and item.get("path") == "index.html"), None)
+    if matching is None or not isinstance(matching.get("url"), str):
+        raise PublishError("here.now did not return an index.html upload URL")
+    finalize_url = upload.get("finalizeUrl")
+    version_id = upload.get("versionId")
+    if not isinstance(finalize_url, str) or not isinstance(version_id, str):
+        raise PublishError("here.now create response is missing finalize metadata")
+    headers = matching.get("headers")
+    if headers is not None and not isinstance(headers, dict):
+        raise PublishError("here.now create response has invalid upload headers")
+    return InternalHereNowCreate(
+        site_url=site_url,
+        expires_at=expires_at,
+        slug=slug,
+        claim_token=claim_token,
+        upload_url=matching["url"],
+        upload_headers=dict(headers or {}),
+        finalize_url=finalize_url,
+        version_id=version_id,
+    )
+
+
+def upload_and_finalize_internal(
+    publication: InternalHereNowCreate,
+    html: bytes,
+    *,
+    upload: Any = None,
+    request_json: Any = None,
+) -> dict[str, Any]:
+    """Upload and finalize a previously-created anonymous site internally."""
+
+    upload_fn = upload or _http_upload
+    request = request_json or _http_json
+    upload_fn(publication.upload_url, html, publication.upload_headers)
+    _status, finalized = request(publication.finalize_url, "POST", {"versionId": publication.version_id})
+    return finalized
+
+
 def _meta_tag(name: str, value: str) -> str:
     return f'<meta name="{name}" content="{value}">'
+
+
+def fetch_live_markers(
+    url: str,
+    expected_markers: dict[str, tuple[str, str]],
+    *,
+    allow_http: bool = False,
+    timeout: float = 30,
+    max_bytes: int = 2_000_000,
+) -> None:
+    """Verify exact, deterministic HTML markers without exposing page data."""
+
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" and not allow_http:
+        raise PublishError("here.now returned a non-HTTPS site URL")
+    request = urllib.request.Request(url, headers={"Accept": "text/html"}, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = int(getattr(response, "status", 200) or 200)
+            if status < 200 or status >= 300:
+                raise PublishError(f"live Site verification failed (HTTP {status})")
+            html = response.read(max_bytes).decode("utf-8", errors="strict")
+    except PublishError:
+        raise
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, UnicodeDecodeError) as exc:
+        raise PublishError(f"live Site verification failed ({getattr(exc, 'code', 'network')})") from None
+    for label, marker in expected_markers.items():
+        if _meta_tag(marker[0], marker[1]) not in html:
+            raise PublishError(f"live Site verification failed: {label} mismatch")
 
 
 def _fetch_live(
@@ -803,29 +1154,17 @@ def _fetch_live(
     allow_http: bool = False,
     timeout: float = 30,
 ) -> None:
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https" and not allow_http:
-        raise PublishError("here.now returned a non-HTTPS site URL")
-    request = urllib.request.Request(url, headers={"Accept": "text/html"}, method="GET")
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            status = int(getattr(response, "status", 200) or 200)
-            if status < 200 or status >= 300:
-                raise PublishError(f"live Site verification failed (HTTP {status})")
-            html = response.read(2_000_000).decode("utf-8", errors="strict")
-    except PublishError:
-        raise
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, UnicodeDecodeError) as exc:
-        raise PublishError(f"live Site verification failed ({getattr(exc, 'code', 'network')})") from None
-    expected_markers = {
-        "session id": _meta_tag("winnow-session-id", expected_session_id),
-        "seed hash": _meta_tag("winnow-seed-hash", expected_seed_hash),
-        "runtime version": _meta_tag("winnow-runtime-version", expected_runtime_version),
-        "expiration": _meta_tag("winnow-expires-at", expected_expires_at),
-    }
-    for label, marker in expected_markers.items():
-        if marker not in html:
-            raise PublishError(f"live Site verification failed: {label} mismatch")
+    fetch_live_markers(
+        url,
+        {
+            "session id": ("winnow-session-id", expected_session_id),
+            "seed hash": ("winnow-seed-hash", expected_seed_hash),
+            "runtime version": ("winnow-runtime-version", expected_runtime_version),
+            "expiration": ("winnow-expires-at", expected_expires_at),
+        },
+        allow_http=allow_http,
+        timeout=timeout,
+    )
 
 
 def _elapsed_ms(started: float, finished: float | None = None) -> int:
@@ -855,56 +1194,38 @@ def publish(
     image_verification = verify_image_urls(seed)
     image_verification_ms = _elapsed_ms(image_started)
     publication_started = time.monotonic()
-    html = build_html(seed)
-    status, created = _http_json(endpoint, "POST", {"files": [{"path": "index.html", "size": len(html), "contentType": CONTENT_TYPE}]}, headers={"X-HereNow-Client": "winnow-portable/2"})
-    if status < 200 or status >= 300 or created.get("anonymous") is not True:
-        raise PublishError("here.now did not create an anonymous Site")
-    expires_at = created.get("expiresAt")
-    if not isinstance(expires_at, str):
-        raise PublishError("here.now anonymous response is missing expiresAt")
-    upload = _object(created.get("upload"), "publish.upload")
-    uploads = _array(upload.get("uploads"), "publish.upload.uploads")
-    matching = next((item for item in uploads if isinstance(item, dict) and item.get("path") == "index.html"), None)
-    if matching is None or not isinstance(matching.get("url"), str):
-        raise PublishError("here.now did not return an index.html upload URL")
-    html = build_html(seed, expires_at=expires_at)
-    _http_upload(matching["url"], html, matching.get("headers"))
-    finalize_url = upload.get("finalizeUrl")
-    version_id = upload.get("versionId")
-    if not isinstance(finalize_url, str) or not isinstance(version_id, str):
-        raise PublishError("here.now create response is missing finalize metadata")
-    _http_json(finalize_url, "POST", {"versionId": version_id})
-    site_url = created.get("siteUrl")
-    if not isinstance(site_url, str):
-        raise PublishError("here.now create response is missing siteUrl")
+    provisional_html = build_html(seed)
+    created = create_anonymous_site_internal(provisional_html, endpoint=endpoint)
+    html = build_html(seed, expires_at=created.expires_at)
+    upload_and_finalize_internal(created, html)
     _fetch_live(
-        site_url,
+        created.site_url,
         seed["session"]["id"],
         digest,
         RUNTIME_VERSION,
-        _utc_expiration(expires_at),
+        _utc_expiration(created.expires_at),
         allow_http=allow_http_test,
     )
     site_publication_ms = _elapsed_ms(publication_started)
     total_ms = _elapsed_ms(total_started)
-    return {
-        "siteUrl": site_url,
-        "expiresAt": expires_at,
-        "sessionId": seed["session"]["id"],
-        "seedHash": digest,
-        "roundNumber": seed["round"]["number"],
-        "imageVerification": {
+    return PublicPublicationReceipt(
+        site_url=created.site_url,
+        expires_at=created.expires_at,
+        session_id=seed["session"]["id"],
+        seed_hash=digest,
+        round_number=seed["round"]["number"],
+        image_verification={
             "scope": image_verification.get("scope", "currentRound"),
             "images": image_verification.get("images", 0),
             "uniqueImages": image_verification.get("uniqueImages", 0),
         },
-        "timingsMs": {
+        timings_ms={
             "validation": validation_ms,
             "imageVerification": image_verification_ms,
             "sitePublication": site_publication_ms,
             "total": total_ms,
         },
-    }
+    ).as_dict()
 
 
 def inspect_continuation(value: dict[str, Any]) -> dict[str, Any]:

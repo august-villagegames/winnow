@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "winnow-remote"
+version = "0.1.0"
+description = "Internal publication and security boundary for Winnow Remote MCP"
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography==46.0.5",
+    "mcp==2.0.0",
+    "redis==5.3.1",
+    "uvicorn==0.34.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
