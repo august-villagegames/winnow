@@ -494,5 +494,5 @@
     })();
   }
 
-  return { PROTOCOL, VERSION, STATE_PROTOCOL, STATE_VERSION, validateEnvelope, emptyState, reconcileState, browserRequest, parseStatus, parseNextRoundResult, cacheBuster, consumeCacheBuster, pollingDelay, reconcileRemoteStatus, applyNextRoundResult, nextRoundControl };
+  return { PROTOCOL, VERSION, STATE_PROTOCOL, STATE_VERSION, validateEnvelope, emptyState, reconcileState, browserRequest, parseStatus, parseNextRoundResult, cacheBuster, consumeCacheBuster, pollingDelay, reconcileRemoteStatus, applyNextRoundResult, nextRoundControl, bootstrap };
 });
