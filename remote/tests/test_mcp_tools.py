@@ -142,6 +142,31 @@ class McpToolTests(unittest.TestCase):
             self.assertFalse(tool.input_schema.get("additionalProperties", True))
         create = tools[0]
         self.assertEqual(set(create.input_schema["properties"]), {"seed", "mode"})
+        mode = create.input_schema["properties"]["mode"]
+        self.assertEqual(mode["const"], "rolling")
+        self.assertEqual(mode["type"], "string")
+
+    def test_create_reports_fixed_contract_guidance_without_echoing_input(self):
+        wrong_mode = self.with_provenance(self.service.create({"seed": self.seed, "mode": "publish"}))
+        self.assertEqual(
+            wrong_mode,
+            {
+                "status": "rejected",
+                "reason": "invalid_mode",
+                "message": "mode must be the literal string 'rolling'.",
+            },
+        )
+
+        invalid_seed = self.with_provenance(self.service.create({"seed": {"private": "do not echo this"}, "mode": "rolling"}))
+        self.assertEqual(
+            invalid_seed,
+            {
+                "status": "rejected",
+                "reason": "invalid_seed",
+                "message": "The seed must be a valid Winnow v4 round-one seed.",
+            },
+        )
+        self.assertNotIn("private", json.dumps(invalid_seed))
 
     def test_streamable_http_mcp_lists_tools_and_rejects_unknown_tool_arguments_before_sdk_decode(self):
         app = create_app(
