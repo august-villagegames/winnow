@@ -34,6 +34,10 @@ class ContractError(ValueError):
     """A bounded, path-oriented contract error safe for a transport response."""
 
 
+class InvalidModeError(ContractError):
+    """The requested MCP lifecycle is not the single rolling lifecycle."""
+
+
 def canonical_json(value: Any) -> bytes:
     """Return the one JSON representation used for digests and byte limits."""
 
@@ -177,7 +181,7 @@ class CreateWinnowSessionRequest:
         bounded_json(value, limit=MAX_REMOTE_MCP_REQUEST_BYTES, path="create request")
         raw = _object(value, "create request", {"seed", "mode"})
         if raw.get("mode") != "rolling":
-            raise ContractError("create request.mode: expected rolling")
+            raise InvalidModeError("create request.mode: expected rolling")
         seed = _required(raw, "seed", "create request")
         if not isinstance(seed, dict):
             raise ContractError("create request.seed: expected an object")

@@ -6,12 +6,12 @@ import asyncio
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import CallToolResult, ResourceLink, ToolAnnotations
 
-from .contracts import CreateWinnowSessionRequest, ContractError, PublishNextRoundRequest, WaitForContinueRequest
+from .contracts import CreateWinnowSessionRequest, ContractError, InvalidModeError, PublishNextRoundRequest, WaitForContinueRequest
 from .coordinator import AuthenticationError, CircuitOpen, Coordinator, CoordinatorError, CreationHandle, QuotaExceeded, StateConflict
 from .herenow import HereNowError, HereNowPublisher, PendingVersion, expected_live_markers
 from .settings import RateLimitError, RateLimiter, WaitNotifier, current_mcp_provenance
@@ -29,9 +29,27 @@ def _load_portable_core() -> Any:
     return load()
 
 
-def _safe_tool_error(_error: BaseException) -> dict[str, str]:
-    """Do not stringify exceptions: they may carry input or provider details."""
+def _safe_tool_error(error: BaseException) -> dict[str, str]:
+    """Return only fixed contract guidance; never echo exception text."""
 
+    if isinstance(error, ContractError):
+        if isinstance(error, InvalidModeError):
+            return {
+                "status": "rejected",
+                "reason": "invalid_mode",
+                "message": "mode must be the literal string 'rolling'.",
+            }
+        return {
+            "status": "rejected",
+            "reason": "invalid_request",
+            "message": "The tool arguments do not match the required Winnow contract.",
+        }
+    if isinstance(error, CoordinatorError):
+        return {
+            "status": "rejected",
+            "reason": "invalid_seed",
+            "message": "The seed must be a valid Winnow v4 round-one seed.",
+        }
     return {"status": "rejected"}
 
 
@@ -85,8 +103,10 @@ class McpToolService:
             # ``creating`` is TTL-bound; cancellation must not leak a partial
             # publication receipt or turn a transport cancellation into output.
             raise
-        except (AuthenticationError, CircuitOpen, ContractError, CoordinatorError, HereNowError, QuotaExceeded, RateLimitError):
+        except (AuthenticationError, CircuitOpen, HereNowError, QuotaExceeded, RateLimitError):
             return _safe_tool_error(Exception())
+        except (ContractError, CoordinatorError) as error:
+            return _safe_tool_error(error)
 
     def _create_blocking(self, handle: CreationHandle, seed: Mapping[str, Any]) -> dict[str, Any]:
         seed_hash = self._core.seed_hash(dict(seed))
@@ -154,7 +174,9 @@ class McpToolService:
             # The event and its publish fence remain in coordinator state.  A
             # reconnecting agent receives the exact same event safely.
             raise
-        except (AuthenticationError, ContractError, CoordinatorError, StateConflict):
+        except ContractError as error:
+            return _safe_tool_error(error)
+        except (AuthenticationError, CoordinatorError, StateConflict):
             return _safe_tool_error(Exception())
 
     async def publish(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
@@ -176,7 +198,9 @@ class McpToolService:
             # Publication ownership and pending metadata are durable.  A later
             # retry reconciles instead of allowing a second publisher to win.
             raise
-        except (AuthenticationError, ContractError, CoordinatorError, HereNowError, RateLimitError, StateConflict):
+        except ContractError as error:
+            return _safe_tool_error(error)
+        except (AuthenticationError, CoordinatorError, HereNowError, RateLimitError, StateConflict):
             return _safe_tool_error(Exception())
 
     def _recover_pending_publish(self, session_handle: str, request: PublishNextRoundRequest) -> dict[str, Any] | None:
@@ -299,14 +323,15 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
     @server.tool(
         name="create_winnow_session",
         description=(
-            "Publish an anonymous public Winnow rolling comparison page from a valid round-one seed. "
+            "Publish an anonymous public Winnow rolling comparison page from a valid round-one seed. Set mode to "
+            "the literal string 'rolling'. "
             "Winnow does not research or call models. Show siteUrl to the user, then immediately call "
             "wait_for_continue and keep this same task alive."
         ),
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True),
         structured_output=True,
     )
-    async def create_winnow_session(seed: dict[str, Any], mode: str, ctx: Context) -> CallToolResult:
+    async def create_winnow_session(seed: dict[str, Any], mode: Literal["rolling"], ctx: Context) -> CallToolResult:
         receipt = await service.create({"seed": seed, "mode": mode})
         if receipt.get("status") == "awaiting_agent_wait" and isinstance(receipt.get("siteUrl"), str):
             return CallToolResult(

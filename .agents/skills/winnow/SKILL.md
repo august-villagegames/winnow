@@ -74,6 +74,17 @@ CSS, badges, ranking weights, summaries, or controls to the seed.
 
 Never create, open, attach, or return a local HTML file or local file path.
 
+## Remote rolling MCP sessions
+
+When the host has a configured Winnow Remote MCP connector, use its
+`create_winnow_session` tool for a rolling session instead of the local
+publisher. Supply the same valid round-one seed, with `mode` set to the exact
+literal string `"rolling"`; `"publish"` and `"live"` are not valid modes.
+Show the returned public URL, then call `wait_for_continue` in the same task.
+When the browser requests a continuation, create a valid successor from that
+continuation, call `publish_next_round`, and immediately wait again. Keep
+session handles, fences, and capabilities out of chat text and URLs.
+
 ## Later rounds
 
 Validate the copied `winnow.continuation` package. Preserve the session and all

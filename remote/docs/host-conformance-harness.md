@@ -10,6 +10,16 @@ The operator supplies a disposable, public HTTPS origin after deployment:
 https://<public-name>/mcp
 ```
 
+The discovered `create_winnow_session` tool accepts exactly two arguments:
+`seed`, containing a valid Winnow v4 round-one seed, and `mode`, whose only
+valid value is the literal string `"rolling"`. There is no `"publish"` or
+`"live"` mode. This constraint is advertised in the MCP tool schema and
+description so a host does not need an out-of-band prompt to discover it.
+
+Rejected tool calls may provide only fixed, safe contract guidance:
+`invalid_mode`, `invalid_request`, or `invalid_seed`. They never include seed
+content, provider failures, capabilities, session handles, or internal state.
+
 Before handing it to a host tester, verify the following without user content:
 
 - `POST /mcp` reaches the official Streamable HTTP application directly (no redirect, auth wall, HTML interstitial, proxy buffering, or path rewrite);
@@ -32,4 +42,3 @@ For **each** of Claude, Cowork, and Claude Code, start a fresh task and record o
 6. Whether transport byte limits fit the actual deployed request/response budgets, and the resulting quota-admission decision for any shared egress.
 
 The test must be stopped if a host requires return-to-chat input for the second cycle, per-round approval, hidden URL behavior, or an unsafe provenance/quota decision. A passing local unit test, local probe, or successful connector setup is not host conformance. Work Package 7 owns the final evidence record and all supported-host/documentation claims.
-
