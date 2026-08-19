@@ -82,6 +82,17 @@ def markers(revision=1):
 
 
 class HereNowPublisherTests(unittest.TestCase):
+    def test_live_markers_normalize_an_equivalent_provider_expiration(self):
+        value = expected_live_markers(
+            session_id="session-1",
+            seed_hash="a" * 64,
+            runtime_version="4.0.0",
+            expires_at="2026-08-19T12:00:00Z",
+            rolling_version=1,
+            published_revision=1,
+        )
+        self.assertEqual(value["expiration"], ("winnow-expires-at", "2026-08-19T12:00:00.000Z"))
+
     def publisher(self, events, *, requests=None, marker_verifier=None, retry_delays=(0,), retry_delay=lambda _seconds: None, core=None):
         requests = list(requests or [(200, {"expiresAt": EXPIRY})])
 
