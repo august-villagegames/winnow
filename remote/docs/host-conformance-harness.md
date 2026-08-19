@@ -20,6 +20,18 @@ Rejected tool calls may provide only fixed, safe contract guidance:
 `invalid_mode`, `invalid_request`, or `invalid_seed`. They never include seed
 content, provider failures, capabilities, session handles, or internal state.
 
+On a successful create or successor publish, the result contains both a public
+resource link and a standard text content block with the exact private
+`wait_for_continue` argument object. That success-only block is annotated for
+the assistant audience; host conformance must verify that it reaches the model
+without becoming ordinary assistant prose. The public URL cannot be used to
+recover this state.
+
+The `continue_requested` wait result is also a standard assistant-audience
+text block. It contains the exact fenced publish arguments plus the validated
+continuation needed to author `nextSeed`; a host must not rely on
+`structuredContent` alone at any stage of the loop.
+
 Before handing it to a host tester, verify the following without user content:
 
 - `POST /mcp` reaches the official Streamable HTTP application directly (no redirect, auth wall, HTML interstitial, proxy buffering, or path rewrite);

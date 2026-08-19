@@ -380,7 +380,7 @@ class AsgiHarness:
         return int(start["status"]), response_headers, json.loads(raw) if raw else None
 
     @classmethod
-    async def mcp_tool(cls, app, name: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
+    async def mcp_result(cls, app, name: str, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         body = json.dumps(
             {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": dict(arguments)}},
             separators=(",", ":"),
@@ -389,7 +389,14 @@ class AsgiHarness:
         if status != 200 or response is None:
             raise AssertionError(f"MCP tool did not return success: {status}")
         result = response.get("result")
-        if not isinstance(result, Mapping) or not isinstance(result.get("structuredContent"), Mapping):
+        if not isinstance(result, Mapping):
+            raise AssertionError("MCP response lacks a result")
+        return result
+
+    @classmethod
+    async def mcp_tool(cls, app, name: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        result = await cls.mcp_result(app, name, arguments)
+        if not isinstance(result.get("structuredContent"), Mapping):
             raise AssertionError("MCP response lacks structured content")
         return dict(result["structuredContent"])
 
@@ -517,12 +524,13 @@ class RemoteIntegrationTests(unittest.TestCase):
 
         async def scenario() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
             async with environment.app.router.lifespan_context(environment.app):
-                receipt = await AsgiHarness.mcp_tool(environment.app, "create_winnow_session", {"seed": self.initial, "mode": "rolling"})
+                create_result = await AsgiHarness.mcp_result(environment.app, "create_winnow_session", {"seed": self.initial, "mode": "rolling"})
+                receipt = dict(create_result["structuredContent"])
                 self.assertEqual(receipt["status"], "awaiting_agent_wait")
                 self.assertNotIn("claim", json.dumps(receipt).lower())
                 browser = browser_capability(environment, receipt)
                 wait_task = asyncio.create_task(
-                    AsgiHarness.mcp_tool(
+                    AsgiHarness.mcp_result(
                         environment.app,
                         "wait_for_continue",
                         {"sessionHandle": receipt["sessionHandle"], "expectedRoundNumber": 1, "expectedSeedHash": receipt["seedHash"], "maxWaitSeconds": 3},
@@ -552,10 +560,40 @@ class RemoteIntegrationTests(unittest.TestCase):
                     headers={"origin": "https://demo-1.here.now", "authorization": f"Bearer {browser}", "content-type": "application/json"},
                 )
                 self.assertEqual((accepted_code, accepted["status"]), (200, "accepted"))
-                event = await asyncio.wait_for(wait_task, timeout=1)
+                wait_result = await asyncio.wait_for(wait_task, timeout=1)
+                event = dict(wait_result["structuredContent"])
                 self.assertEqual(event["status"], "continue_requested")
-                published = await AsgiHarness.mcp_tool(environment.app, "publish_next_round", publish_arguments(receipt, event, self.successor))
+                self.assertEqual(wait_result["content"][0]["annotations"], {"audience": ["assistant"]})
+                self.assertEqual(
+                    json.loads(wait_result["content"][0]["text"]),
+                    {
+                        "nextAction": "Research a valid successor, then call publish_next_round with publishArguments and nextSeed.",
+                        "publishArguments": {
+                            "sessionHandle": receipt["sessionHandle"],
+                            "eventId": event["eventId"],
+                            "publishFence": event["publishFence"],
+                            "parentSeedHash": receipt["seedHash"],
+                        },
+                        "continuation": event["continuation"],
+                        "researchDeadline": event["researchDeadline"],
+                    },
+                )
+                publish_result = await AsgiHarness.mcp_result(environment.app, "publish_next_round", publish_arguments(receipt, event, self.successor))
+                published = dict(publish_result["structuredContent"])
                 self.assertEqual((published["status"], published["roundNumber"], published["publishedRevision"]), ("awaiting_agent_wait", 2, 2))
+                self.assertEqual(publish_result["content"][0]["annotations"], {"audience": ["assistant"]})
+                self.assertEqual(
+                    json.loads(publish_result["content"][0]["text"]),
+                    {
+                        "nextTool": "wait_for_continue",
+                        "arguments": {
+                            "sessionHandle": receipt["sessionHandle"],
+                            "expectedRoundNumber": published["roundNumber"],
+                            "expectedSeedHash": published["seedHash"],
+                            "maxWaitSeconds": environment.service.max_wait_seconds,
+                        },
+                    },
+                )
                 ready_code, _headers, ready = await AsgiHarness.request(
                     environment.app,
                     method="GET",
