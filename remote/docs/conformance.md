@@ -30,7 +30,7 @@ host test.
 
 | Host | Status | Evidence and remaining release checks |
 | --- | --- | --- |
-| Claude Desktop | In progress — not approved | A deployed session published round one and then a successor that rendered in a normal browser. The connector contract and all actionable result handoffs were corrected after live testing. Still required: a second independent browser-driven cycle, proof that the same task resumes/re-enters wait with no chat input or per-round approval, cancellation, connection-loss, navigation, termination, deployed ingress provenance, quota-admission decision, byte-limit fit, and offering/prerequisite record. |
+| Claude Desktop | In progress — not approved | A deployed session published round one and then a successor that rendered in a normal browser. The connector contract and all actionable result handoffs were corrected after live testing. Still required: a fresh normal-language task after visible connector-readiness/reconnect verification; a second independent browser-driven cycle; proof that the same task resumes/re-enters wait with no chat input or per-round approval; cancellation, connection loss, navigation, termination, deployed ingress provenance, quota-admission decision, byte-limit fit, and offering/prerequisite record. |
 | Cowork | Not executed — not approved | Run the complete public-host harness. |
 | Claude Code | Not executed — not approved | Run the complete public-host harness. |
 
@@ -48,7 +48,10 @@ deployed `/mcp` endpoint. Record only redacted outcome classes and timings:
    resumed task without chat input, successor publication, and a following
    wait.
 4. One-time approval, cancellation, connection loss, UI navigation, and
-   process termination behavior.
+   process termination behavior. Where the host exposes a disconnected
+   connector state, also verify reconnect recovery followed by a fresh,
+   normal-language Winnow request; the assistant must not simulate Winnow in
+   chat while the connector is unavailable.
 5. Deployed ingress provenance category and the resulting quota-admission
    decision; never retain raw network or header values.
 6. Actual request/response byte-limit fit.

@@ -1381,7 +1381,11 @@ Tasks:
      wait automatically.
    - Complete at least two browser-driven cycles.
    - Verify one-time unattended approval and behavior on cancellation,
-     connection loss, UI navigation, and process termination.
+     connection loss (including a host-visible disconnected-connector recovery
+     followed by a fresh normal-language Winnow request, when the host exposes
+     that state), UI navigation, and process termination. While disconnected,
+     the host must report Winnow unavailable rather than simulate a Winnow-like
+     chat experience.
 5. Measure for each host whether the deployed service observes direct transport
    source, a recognized trusted-proxy header, or only shared host egress. Record
    header names, trust-chain category, and quota suitability without retaining
