@@ -171,6 +171,39 @@ class CoordinatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "canonical-order subset"):
             self.accept(handle, BrowserNextRoundRequest.parse(invalid_key))
 
+    def test_browser_accepts_canonical_category_profile_key_with_internal_spaces(self):
+        """Category profile keys are canonical JSON, not whitespace-free tokens."""
+
+        for option_index in (0, 2, 4):
+            for value in self.seed["round"]["options"][option_index]["values"]:
+                if value["factorId"] == "seats":
+                    value["value"] = "three seat"
+
+        category_key = json.dumps(
+            {"direction": "include", "factorId": "seats", "polarity": "like", "value": "three seat"},
+            separators=(",", ":"),
+        )
+        request = self.browser_request(selected=[category_key])
+        handle, _receipt = self.active()
+        self.coordinator.wait_for_continue(handle.agent_capability, self.wait_request())
+
+        accepted = self.accept(handle, request)
+        self.assertEqual(accepted["status"], "accepted")
+
+        invalid_key = category_key.replace("three seat", "three\nseat")
+        raw = {
+            "protocol": "winnow.browser-request",
+            "version": 1,
+            "idempotencyKey": str(uuid.uuid4()),
+            "roundNumber": 1,
+            "seedHash": self._core().seed_hash(self.seed),
+            "publishedRevision": 1,
+            "verdicts": [item.as_dict() for item in request.verdicts],
+            "selectedProfileKeys": [invalid_key],
+        }
+        with self.assertRaisesRegex(ContractError, "invalid characters"):
+            BrowserNextRoundRequest.parse(raw)
+
     def test_reconstruction_matches_cross_language_runtime_fixture_and_keeps_parent_server_owned(self):
         continuation = fixture("synthetic-continuation.json")
         request = self.browser_request(
