@@ -16,7 +16,7 @@ provider credential.
 | --- | --- |
 | Portable Python suite | PASS — 56 tests |
 | Browser-runtime Node suites | PASS — 37 tests |
-| Remote unit/integration suite | PASS — 46 tests |
+| Remote unit/integration suite | PASS — 47 tests |
 | Schema identity and diff checks | PASS |
 | Real browser page after deployed remote create/update | Observed; public page reached a round-two completion screen after a browser-driven successor flow. |
 
