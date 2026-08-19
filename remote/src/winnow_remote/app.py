@@ -150,10 +150,15 @@ class McpIngressGuard:
         name = params.get("name")
         arguments = params.get("arguments")
         expected = {
+            "get_winnow_v4_seed_contract": set(),
             "create_winnow_session": {"seed", "mode"},
             "wait_for_continue": {"sessionHandle", "expectedRoundNumber", "expectedSeedHash", "maxWaitSeconds"},
             "publish_next_round": {"sessionHandle", "eventId", "publishFence", "parentSeedHash", "nextSeed"},
         }.get(name)
+        if name == "get_winnow_v4_seed_contract" and arguments is None:
+            # MCP permits an omitted arguments field for a no-input tool. It
+            # remains closed whenever the caller does provide an object.
+            return
         if expected is not None and (not isinstance(arguments, dict) or set(arguments) != expected):
             raise _RequestRejected(400)
 

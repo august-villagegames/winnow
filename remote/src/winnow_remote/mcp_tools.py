@@ -15,6 +15,13 @@ from mcp.types import Annotations, CallToolResult, ResourceLink, TextContent, To
 from .contracts import CreateWinnowSessionRequest, ContractError, InvalidModeError, PublishNextRoundRequest, WaitForContinueRequest
 from .coordinator import AuthenticationError, CircuitOpen, Coordinator, CoordinatorError, CreationHandle, QuotaExceeded, StateConflict
 from .herenow import HereNowError, HereNowPublisher, PendingVersion, expected_live_markers
+from .mcp_contract import (
+    ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI,
+    SEED_SCHEMA_RESOURCE_URI,
+    canonical_seed_schema_text,
+    round_one_authoring_guide,
+    seed_contract_payload,
+)
 from .settings import RateLimitError, RateLimiter, WaitNotifier, current_mcp_provenance
 
 
@@ -325,7 +332,44 @@ class McpToolService:
 
 
 def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
-    """Register the only three model-free public tools on the official SDK."""
+    """Register fixed v4 discovery material and the public rolling tools."""
+
+    @server.resource(
+        SEED_SCHEMA_RESOURCE_URI,
+        name="Winnow v4 seed schema",
+        description="Exact canonical JSON Schema for a Winnow v4 round-one seed.",
+        mime_type="application/schema+json",
+    )
+    def read_seed_schema() -> str:
+        return canonical_seed_schema_text()
+
+    @server.resource(
+        ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI,
+        name="Winnow v4 round-one authoring guide",
+        description="Fixed safe guidance and a non-publishable structural v4 round-one example.",
+        mime_type="text/markdown",
+    )
+    def read_round_one_authoring_guide() -> str:
+        return round_one_authoring_guide()
+
+    @server.tool(
+        name="get_winnow_v4_seed_contract",
+        description=(
+            "Read the fixed Winnow v4 round-one schema and safe authoring guide. Use this before authoring a seed "
+            "when MCP resources are not available to the host. It does not create, research, publish, or inspect a session."
+        ),
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False),
+    )
+    async def get_winnow_v4_seed_contract(ctx: Context) -> CallToolResult:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(seed_contract_payload(), ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+                    annotations=Annotations(audience=["assistant"]),
+                )
+            ]
+        )
 
     def wait_handoff(receipt: Mapping[str, Any], session_handle: str) -> TextContent:
         """Give every host a standard text form of the next private tool call.
@@ -397,7 +441,8 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
         name="create_winnow_session",
         description=(
             "Publish an anonymous public Winnow rolling comparison page from a valid round-one seed. Set mode to "
-            "the literal string 'rolling'. "
+            "the literal string 'rolling'. Before authoring the seed, read get_winnow_v4_seed_contract or the "
+            "winnow://contracts/v4/seed-schema.json and winnow://contracts/v4/round-one-authoring-guide resources. "
             "Winnow does not research or call models. Show siteUrl to the user, then immediately call "
             "wait_for_continue and keep this same task alive."
         ),
@@ -462,7 +507,7 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
     # The official SDK's dynamic function model permits unknown kwargs by
     # default. The ASGI guard rejects them before decoding, and this schema
     # annotation keeps discovery clients aligned with that closed boundary.
-    for tool_name in ("create_winnow_session", "wait_for_continue", "publish_next_round"):
+    for tool_name in ("get_winnow_v4_seed_contract", "create_winnow_session", "wait_for_continue", "publish_next_round"):
         tool = server._tool_manager.get_tool(tool_name)  # SDK has no public per-tool schema override.
         if tool is not None:
             tool.parameters["additionalProperties"] = False

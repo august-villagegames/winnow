@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+from jsonschema import Draft202012Validator
+
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "remote" / "src"))
@@ -19,6 +21,16 @@ from mcp.server.mcpserver import MCPServer  # noqa: E402
 from winnow_remote.app import AppConfig, AppDependencies, create_app  # noqa: E402
 from winnow_remote.contracts import BrowserNextRoundRequest  # noqa: E402
 from winnow_remote.coordinator import Coordinator, CoordinatorConfig  # noqa: E402
+from winnow_remote.herenow import MAX_REMOTE_MCP_RESULT_BYTES  # noqa: E402
+from winnow_remote.mcp_contract import (  # noqa: E402
+    ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI,
+    ROUND_ONE_EXAMPLE,
+    SEED_SCHEMA_RESOURCE_URI,
+    canonical_seed_schema_bytes,
+    canonical_seed_schema_path,
+    round_one_authoring_guide,
+    seed_contract_payload,
+)
 from winnow_remote.mcp_tools import McpToolConfig, McpToolService, register_mcp_tools  # noqa: E402
 from winnow_remote.repository import FakeRepository  # noqa: E402
 from winnow_remote.security import CapabilitySecurity  # noqa: E402
@@ -133,18 +145,84 @@ class McpToolTests(unittest.TestCase):
             }
         )
 
-    def test_official_sdk_registers_exactly_the_three_structured_tools(self):
+    def test_official_sdk_registers_contract_resources_and_four_closed_tools(self):
         server = MCPServer(name="test")
         register_mcp_tools(server, self.service)
         tools = asyncio.run(server.list_tools())
-        self.assertEqual([tool.name for tool in tools], ["create_winnow_session", "wait_for_continue", "publish_next_round"])
+        self.assertEqual(
+            [tool.name for tool in tools],
+            ["get_winnow_v4_seed_contract", "create_winnow_session", "wait_for_continue", "publish_next_round"],
+        )
         for tool in tools:
             self.assertFalse(tool.input_schema.get("additionalProperties", True))
-        create = tools[0]
+        contract = tools[0]
+        self.assertEqual(contract.input_schema["properties"], {})
+        self.assertEqual(
+            contract.annotations.model_dump(by_alias=True, exclude_none=True),
+            {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+        )
+        create = tools[1]
         self.assertEqual(set(create.input_schema["properties"]), {"seed", "mode"})
         mode = create.input_schema["properties"]["mode"]
         self.assertEqual(mode["const"], "rolling")
         self.assertEqual(mode["type"], "string")
+        self.assertIn("get_winnow_v4_seed_contract", create.description)
+        self.assertIn(SEED_SCHEMA_RESOURCE_URI, create.description)
+
+        resources = asyncio.run(server.list_resources())
+        self.assertEqual([str(resource.uri) for resource in resources], [SEED_SCHEMA_RESOURCE_URI, ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI])
+        self.assertEqual([resource.mime_type for resource in resources], ["application/schema+json", "text/markdown"])
+
+    def test_contract_resources_and_fallback_tool_are_fixed_valid_and_redacted(self):
+        server = MCPServer(name="test")
+        register_mcp_tools(server, self.service)
+
+        schema_resource = asyncio.run(server.read_resource(SEED_SCHEMA_RESOURCE_URI))[0]
+        guide_resource = asyncio.run(server.read_resource(ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI))[0]
+        self.assertEqual(schema_resource.content.encode("utf-8"), canonical_seed_schema_bytes())
+        self.assertEqual(canonical_seed_schema_path().read_bytes(), canonical_seed_schema_bytes())
+        self.assertEqual(guide_resource.content, round_one_authoring_guide())
+
+        # The portable core is the runtime validation boundary. The fixed guide
+        # example must remain a valid text-only round-one seed without becoming
+        # a second hand-maintained contract.
+        schema = json.loads(canonical_seed_schema_bytes())
+        Draft202012Validator(schema).validate(ROUND_ONE_EXAMPLE)
+        self.service._core.validate_seed(ROUND_ONE_EXAMPLE)
+        self.assertEqual(ROUND_ONE_EXAMPLE["session"]["imagePolicy"]["mode"], "notApplicable")
+        self.assertIn("illustrative only", guide_resource.content)
+        self.assertIn("do not publish unchanged", guide_resource.content)
+
+        result = asyncio.run(server.call_tool("get_winnow_v4_seed_contract", {}))
+        self.assertFalse(result.is_error)
+        self.assertEqual(len(result.content), 1)
+        payload = json.loads(result.content[0].text)
+        self.assertEqual(payload, seed_contract_payload())
+        self.assertEqual(payload["schemaResourceUri"], SEED_SCHEMA_RESOURCE_URI)
+        self.assertEqual(payload["authoringGuideResourceUri"], ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI)
+        self.assertEqual(payload["seedSchema"], json.loads(canonical_seed_schema_bytes()))
+        self.assertEqual(payload["roundOneAuthoringGuide"], round_one_authoring_guide())
+
+        encoded_result = json.dumps(
+            {"content": [item.model_dump(by_alias=True, exclude_none=True) for item in result.content]},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self.assertLessEqual(len(encoded_result), MAX_REMOTE_MCP_RESULT_BYTES)
+        serialized = json.dumps({"resources": [payload, guide_resource.content]}, ensure_ascii=False)
+        for forbidden in ("sessionHandle", "browserCapability", "claimToken", "publishFence", "eventId", "agentLease"):
+            self.assertNotIn(forbidden, serialized)
+        self.assertNotIn(str(canonical_seed_schema_path()), serialized)
+
+        with self.assertRaisesRegex(Exception, "resource"):
+            asyncio.run(server.read_resource("winnow://contracts/v4/not-found"))
+
+    def test_docker_runtime_recipe_packages_the_canonical_schema_source(self):
+        dockerfile = (ROOT / "remote" / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn(
+            "COPY --chown=winnow:winnow .agents/skills/winnow/references/seed.schema.json .agents/skills/winnow/references/seed.schema.json",
+            dockerfile,
+        )
 
     def test_create_reports_fixed_contract_guidance_without_echoing_input(self):
         wrong_mode = self.with_provenance(self.service.create({"seed": self.seed, "mode": "publish"}))
@@ -224,10 +302,34 @@ class McpToolTests(unittest.TestCase):
                     }
                 )
                 listed = await request({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+                resources = await request({"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}})
+                schema = await request(
+                    {"jsonrpc": "2.0", "id": 4, "method": "resources/read", "params": {"uri": SEED_SCHEMA_RESOURCE_URI}}
+                )
+                guide = await request(
+                    {"jsonrpc": "2.0", "id": 5, "method": "resources/read", "params": {"uri": ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI}}
+                )
+                missing_resource = await request(
+                    {"jsonrpc": "2.0", "id": 6, "method": "resources/read", "params": {"uri": "winnow://contracts/v4/not-found"}}
+                )
+                contract = await request(
+                    {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "get_winnow_v4_seed_contract", "arguments": {}}}
+                )
+                contract_without_arguments = await request(
+                    {"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "get_winnow_v4_seed_contract"}}
+                )
+                contract_rejected = await request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 9,
+                        "method": "tools/call",
+                        "params": {"name": "get_winnow_v4_seed_contract", "arguments": {"unexpected": True}},
+                    }
+                )
                 created = await request(
                     {
                         "jsonrpc": "2.0",
-                        "id": 3,
+                        "id": 10,
                         "method": "tools/call",
                         "params": {"name": "create_winnow_session", "arguments": {"seed": self.seed, "mode": "rolling"}},
                     }
@@ -235,7 +337,7 @@ class McpToolTests(unittest.TestCase):
                 rejected = await request(
                     {
                         "jsonrpc": "2.0",
-                        "id": 4,
+                        "id": 11,
                         "method": "tools/call",
                         "params": {
                             "name": "wait_for_continue",
@@ -243,12 +345,31 @@ class McpToolTests(unittest.TestCase):
                         },
                     }
                 )
-                return initialized, listed, created, rejected
+                return initialized, listed, resources, schema, guide, missing_resource, contract, contract_without_arguments, contract_rejected, created, rejected
 
-        initialized, listed, created, rejected = asyncio.run(scenario())
+        initialized, listed, resources, schema, guide, missing_resource, contract, contract_without_arguments, contract_rejected, created, rejected = asyncio.run(scenario())
         self.assertEqual(initialized[0], 200)
         self.assertEqual(listed[0], 200)
-        self.assertEqual([tool["name"] for tool in listed[1]["result"]["tools"]], ["create_winnow_session", "wait_for_continue", "publish_next_round"])
+        self.assertEqual(
+            [tool["name"] for tool in listed[1]["result"]["tools"]],
+            ["get_winnow_v4_seed_contract", "create_winnow_session", "wait_for_continue", "publish_next_round"],
+        )
+        contract_schema = listed[1]["result"]["tools"][0]
+        self.assertEqual(contract_schema["inputSchema"]["properties"], {})
+        self.assertEqual(
+            contract_schema["annotations"],
+            {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+        )
+        self.assertEqual([resource["uri"] for resource in resources[1]["result"]["resources"]], [SEED_SCHEMA_RESOURCE_URI, ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI])
+        self.assertEqual(schema[1]["result"]["contents"][0]["text"].encode("utf-8"), canonical_seed_schema_bytes())
+        self.assertEqual(guide[1]["result"]["contents"][0]["text"], round_one_authoring_guide())
+        self.assertEqual(missing_resource[1]["error"]["code"], -32602)
+        self.assertNotIn(str(canonical_seed_schema_path()), json.dumps(missing_resource[1]))
+        contract_payload = json.loads(contract[1]["result"]["content"][0]["text"])
+        self.assertEqual(contract_payload, seed_contract_payload())
+        self.assertEqual(json.loads(contract_without_arguments[1]["result"]["content"][0]["text"]), seed_contract_payload())
+        self.assertLessEqual(len(json.dumps(contract[1], ensure_ascii=False).encode("utf-8")), MAX_REMOTE_MCP_RESULT_BYTES)
+        self.assertEqual(contract_rejected, (400, {"error": "request_rejected"}))
         receipt = created[1]["result"]["structuredContent"]
         self.assertEqual((created[0], receipt["status"]), (200, "awaiting_agent_wait"))
         content = created[1]["result"]["content"]
