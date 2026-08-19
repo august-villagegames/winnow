@@ -1050,10 +1050,16 @@ class PublisherTests(unittest.TestCase):
             def read(self, _limit):
                 return self.body
 
+        observed_user_agents = []
+
+        def read_hosted_html(request, timeout):
+            observed_user_agents.append(request.get_header("User-agent"))
+            return Response(hosted_html())
+
         with patch.object(
             winnow.urllib.request,
             "urlopen",
-            side_effect=lambda _request, timeout: Response(hosted_html()),
+            side_effect=read_hosted_html,
         ):
             winnow._fetch_live(
                 "https://mock.here.now/site",
@@ -1062,6 +1068,7 @@ class PublisherTests(unittest.TestCase):
                 expected["runtime"],
                 expected["expires"],
             )
+        self.assertEqual(observed_user_agents, ["winnow-remote/1"])
 
         for field, wrong_value in [("session", "other-session"), ("seed", "b" * 64), ("runtime", "3.0.1"), ("expires", "2026-08-13T12:00:00.000Z")]:
             with self.subTest(field=field), patch.object(

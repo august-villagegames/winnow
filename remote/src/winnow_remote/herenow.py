@@ -360,7 +360,7 @@ class HereNowPublisher:
     ) -> dict[str, tuple[str, str]]:
         markers = markers_or_factory(original_expires_at) if callable(markers_or_factory) else markers_or_factory
         normalized = dict(markers)
-        if normalized.get("expiration") != ("winnow-expires-at", original_expires_at):
+        if normalized.get("expiration") != ("winnow-expires-at", _normalized_expiration_marker(original_expires_at)):
             raise HereNowError("publication markers do not preserve the original expiration")
         return normalized
 

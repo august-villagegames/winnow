@@ -93,6 +93,20 @@ class HereNowPublisherTests(unittest.TestCase):
         )
         self.assertEqual(value["expiration"], ("winnow-expires-at", "2026-08-19T12:00:00.000Z"))
 
+    def test_marker_guard_accepts_an_equivalent_unfractional_provider_expiration(self):
+        events = []
+        publisher = self.publisher(events)
+        raw_expiry = "2026-08-19T12:00:00Z"
+        expected = expected_live_markers(
+            session_id="session-1",
+            seed_hash="a" * 64,
+            runtime_version="4.0.0",
+            expires_at=raw_expiry,
+            rolling_version=1,
+            published_revision=1,
+        )
+        self.assertEqual(publisher._resolve_expiration_markers(expected, raw_expiry), expected)
+
     def publisher(self, events, *, requests=None, marker_verifier=None, retry_delays=(0,), retry_delay=lambda _seconds: None, core=None):
         requests = list(requests or [(200, {"expiresAt": EXPIRY})])
 

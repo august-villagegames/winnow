@@ -1128,7 +1128,13 @@ def fetch_live_markers(
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" and not allow_http:
         raise PublishError("here.now returned a non-HTTPS site URL")
-    request = urllib.request.Request(url, headers={"Accept": "text/html"}, method="GET")
+    # HereNow rejects Python's otherwise headerless standard-library request
+    # with a 403 even when the public page and its markers are present.
+    request = urllib.request.Request(
+        url,
+        headers={"Accept": "text/html", "User-Agent": "winnow-remote/1"},
+        method="GET",
+    )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             status = int(getattr(response, "status", 200) or 200)
