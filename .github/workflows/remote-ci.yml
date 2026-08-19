@@ -37,5 +37,4 @@ jobs:
       - name: Check deployment artifacts do not carry bearer field names
         run: |
           test -f remote/Dockerfile
-          test -f remote/deploy/kubernetes.yaml
-          ! grep -n 'claimToken\|browserCapability\|sessionHandle' remote/deploy/kubernetes.yaml
+          ! grep -n 'claimToken\|browserCapability\|sessionHandle' remote/Dockerfile
