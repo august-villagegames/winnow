@@ -81,6 +81,8 @@ When the host has a configured Winnow Remote MCP connector, use its
 publisher. Supply the same valid round-one seed, with `mode` set to the exact
 literal string `"rolling"`; `"publish"` and `"live"` are not valid modes.
 Show the returned public URL, then call `wait_for_continue` in the same task.
+Use the `wait_for_continue` argument object supplied in the tool's text content
+for that call; do not quote it in normal chat text or put it in a URL.
 When the browser requests a continuation, create a valid successor from that
 continuation, call `publish_next_round`, and immediately wait again. Keep
 session handles, fences, and capabilities out of chat text and URLs.

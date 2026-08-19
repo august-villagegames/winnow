@@ -251,6 +251,22 @@ class McpToolTests(unittest.TestCase):
         self.assertEqual([tool["name"] for tool in listed[1]["result"]["tools"]], ["create_winnow_session", "wait_for_continue", "publish_next_round"])
         receipt = created[1]["result"]["structuredContent"]
         self.assertEqual((created[0], receipt["status"]), (200, "awaiting_agent_wait"))
+        content = created[1]["result"]["content"]
+        self.assertEqual(content[0], {"type": "resource_link", "name": "Winnow session", "uri": receipt["siteUrl"], "mimeType": "text/html"})
+        self.assertEqual(content[1]["annotations"], {"audience": ["assistant"]})
+        handoff = json.loads(content[1]["text"])
+        self.assertEqual(
+            handoff,
+            {
+                "nextTool": "wait_for_continue",
+                "arguments": {
+                    "sessionHandle": receipt["sessionHandle"],
+                    "expectedRoundNumber": receipt["roundNumber"],
+                    "expectedSeedHash": receipt["seedHash"],
+                    "maxWaitSeconds": 300,
+                },
+            },
+        )
         self.assertNotIn("claim-token", json.dumps(created[1]))
         self.assertEqual(rejected, (400, {"error": "request_rejected"}))
 

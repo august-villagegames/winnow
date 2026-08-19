@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import CallToolResult, ResourceLink, ToolAnnotations
+from mcp.types import Annotations, CallToolResult, ResourceLink, TextContent, ToolAnnotations
 
 from .contracts import CreateWinnowSessionRequest, ContractError, InvalidModeError, PublishNextRoundRequest, WaitForContinueRequest
 from .coordinator import AuthenticationError, CircuitOpen, Coordinator, CoordinatorError, CreationHandle, QuotaExceeded, StateConflict
@@ -85,6 +86,12 @@ class McpToolService:
         self._notifier = notifier
         self._config = config
         self._core = core or _load_portable_core()
+
+    @property
+    def max_wait_seconds(self) -> int:
+        """Expose the configured bounded wait for an MCP handoff payload."""
+
+        return self._config.max_wait_seconds
 
     async def create(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         """Create and publish a complete initial rolling page."""
@@ -320,6 +327,27 @@ class McpToolService:
 def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
     """Register the only three model-free public tools on the official SDK."""
 
+    def wait_handoff(receipt: Mapping[str, Any], session_handle: str) -> TextContent:
+        """Give every host a standard text form of the next private tool call.
+
+        ``structuredContent`` is useful to schema-aware clients, but some
+        hosts surface only regular MCP content blocks to their model.  The
+        bearer is therefore delivered only in this direct, non-URL tool
+        response; it is never recoverable from the public page.
+        """
+
+        arguments = {
+            "sessionHandle": session_handle,
+            "expectedRoundNumber": receipt["roundNumber"],
+            "expectedSeedHash": receipt["seedHash"],
+            "maxWaitSeconds": service.max_wait_seconds,
+        }
+        return TextContent(
+            type="text",
+            text=json.dumps({"nextTool": "wait_for_continue", "arguments": arguments}, separators=(",", ":"), sort_keys=True),
+            annotations=Annotations(audience=["assistant"]),
+        )
+
     @server.tool(
         name="create_winnow_session",
         description=(
@@ -335,7 +363,10 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
         receipt = await service.create({"seed": seed, "mode": mode})
         if receipt.get("status") == "awaiting_agent_wait" and isinstance(receipt.get("siteUrl"), str):
             return CallToolResult(
-                content=[ResourceLink(name="Winnow session", uri=receipt["siteUrl"], mimeType="text/html")],
+                content=[
+                    ResourceLink(name="Winnow session", uri=receipt["siteUrl"], mimeType="text/html"),
+                    wait_handoff(receipt, str(receipt["sessionHandle"])),
+                ],
                 structuredContent=receipt,
             )
         return CallToolResult(content=[], structuredContent=receipt, isError=True)
@@ -368,8 +399,8 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True),
         structured_output=True,
     )
-    async def publish_next_round(sessionHandle: str, eventId: str, publishFence: str, parentSeedHash: str, nextSeed: dict[str, Any], ctx: Context) -> dict[str, Any]:
-        return await service.publish(
+    async def publish_next_round(sessionHandle: str, eventId: str, publishFence: str, parentSeedHash: str, nextSeed: dict[str, Any], ctx: Context) -> CallToolResult:
+        receipt = await service.publish(
             {
                 "sessionHandle": sessionHandle,
                 "eventId": eventId,
@@ -378,6 +409,9 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
                 "nextSeed": nextSeed,
             }
         )
+        if receipt.get("status") == "awaiting_agent_wait":
+            return CallToolResult(content=[wait_handoff(receipt, sessionHandle)], structuredContent=receipt)
+        return CallToolResult(content=[], structuredContent=receipt, isError=True)
 
     # The official SDK's dynamic function model permits unknown kwargs by
     # default. The ASGI guard rejects them before decoding, and this schema
