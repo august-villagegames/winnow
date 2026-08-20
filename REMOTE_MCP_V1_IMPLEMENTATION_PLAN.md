@@ -141,6 +141,14 @@ The page initially behaves like Winnow v4: the user reacts to 4-10 option cards,
 reviews their summary, and can remove or restore profile guidance. Reactions
 remain browser-local until the user asks for another round.
 
+Every rolling page visibly states that it is public to anyone with the link,
+that link holders can guide a future round while the agent is waiting, and that
+it expires. The public page embeds a page-bound browser credential so it can
+submit the completed current round. That credential is not user identity or
+owner authority: it cannot act as the agent, provider, claim token, or
+publication fence, and it is never placed in a URL, MCP/chat output, telemetry,
+agent credential, or provider credential.
+
 At the completed-round summary, the page shows:
 
 - `Generate another round` when an agent wait lease is active and capacity
@@ -374,8 +382,11 @@ Requirements:
   session/tombstone lifetime or drain active sessions before retiring a key.
 - Never place the agent capability or HereNow token in the page, public URL,
   logs, traces, metrics, exceptions, or public tool receipts.
-- Send the browser capability in an authorization header, not a URL path, so
-  ordinary reverse-proxy access logs and browser history do not capture it.
+- The public page embeds the page-bound browser credential and sends it in an
+  authorization header, never a URL path, so ordinary reverse-proxy access logs
+  and browser history do not capture it. It is not a user identity or owner
+  credential; page-link holders can only submit the current completed round
+  while the agent wait is active.
 - The agent capability may be visible inside the agent's MCP tool context; it is
   an anonymous bearer capability, not a user identity.
 - The public browser capability cannot call MCP wait/publish operations.

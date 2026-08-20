@@ -912,6 +912,10 @@ class RollingCompilerTests(unittest.TestCase):
         self.assertIn('name="winnow-expires-at" content="2026-08-09T12:00:00.000Z"', html)
         self.assertIn("connect-src https://mcp.example.test", html)
         self.assertNotIn("connect-src 'none'", html)
+        self.assertIn('class="public-link-notice"', html)
+        self.assertIn("Anyone with this link can view this comparison", html)
+        self.assertIn("link holder can guide future rounds", html)
+        self.assertIn("This page expires", html)
         self.assertNotIn("__WINNOW_", html)
 
         envelope_match = re.search(r'id="winnow-rolling-page" type="application/octet-stream">([^<]+)<', html)

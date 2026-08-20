@@ -168,6 +168,36 @@ class McpToolTests(unittest.TestCase):
         self.assertEqual(mode["type"], "string")
         self.assertIn("get_winnow_v4_seed_contract", create.description)
         self.assertIn(SEED_SCHEMA_RESOURCE_URI, create.description)
+        for anchor in (
+            "explicit user request",
+            "non-sensitive public-by-link",
+            "The host researches; Winnow only validates, publishes, and coordinates.",
+            "link holders can read the temporary page and committed choices",
+            "100-option cap",
+        ):
+            self.assertIn(anchor, create.description)
+        wait = tools[2]
+        for anchor in (
+            "non-sensitive public-by-link session created after an explicit user request",
+            "renewably wait",
+            "page-bound request",
+            "not user identity or owner authority",
+            "one successor",
+            "renew this wait",
+            "Stop on cancellation or terminal state",
+        ):
+            self.assertIn(anchor, wait.description)
+        publish = tools[3]
+        for anchor in (
+            "non-sensitive public-by-link session created after an explicit user request",
+            "exactly one same-session successor",
+            "accepted page-bound event for the current revision",
+            "The host researches; Winnow does not.",
+            "not grant user identity, owner authority",
+            "renew wait",
+            "100-option cap",
+        ):
+            self.assertIn(anchor, publish.description)
 
         resources = asyncio.run(server.list_resources())
         self.assertEqual([str(resource.uri) for resource in resources], [SEED_SCHEMA_RESOURCE_URI, ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI])
@@ -370,6 +400,17 @@ class McpToolTests(unittest.TestCase):
         self.assertEqual(json.loads(contract_without_arguments[1]["result"]["content"][0]["text"]), seed_contract_payload())
         self.assertLessEqual(len(json.dumps(contract[1], ensure_ascii=False).encode("utf-8")), MAX_REMOTE_MCP_RESULT_BYTES)
         self.assertEqual(contract_rejected, (400, {"error": "request_rejected"}))
+        self.assertEqual(initialized[1]["result"]["serverInfo"]["name"], "Winnow")
+        instructions = initialized[1]["result"].get("instructions", "")
+        for anchor in (
+            "explicitly requests a non-sensitive public-by-link comparison",
+            "The host researches and selects options",
+            "temporary link can read the comparison and committed choices",
+            "not user identity or owner authority",
+            "Each accepted current revision releases one successor",
+            "100-option cap",
+        ):
+            self.assertIn(anchor, instructions)
         receipt = created[1]["result"]["structuredContent"]
         self.assertEqual((created[0], receipt["status"]), (200, "awaiting_agent_wait"))
         content = created[1]["result"]["content"]
@@ -389,6 +430,19 @@ class McpToolTests(unittest.TestCase):
             },
         )
         self.assertNotIn("claim-token", json.dumps(created[1]))
+        browser = self.security.browser_capability_for_session(
+            self.repository.lookup_agent(self.security.capability_hash(receipt["sessionHandle"])).session_id
+        )
+        non_page_surfaces = json.dumps(
+            {
+                "server": initialized[1]["result"],
+                "tools": listed[1]["result"]["tools"],
+                "create": created[1],
+                "resources": resources[1],
+            },
+            sort_keys=True,
+        )
+        self.assertNotIn(browser, non_page_surfaces)
         self.assertEqual(rejected, (400, {"error": "request_rejected"}))
 
     def test_create_derives_browser_bearer_without_durability_and_successor_reuses_it(self):

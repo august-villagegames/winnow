@@ -116,9 +116,12 @@ through a configured MCP connector. The agent shows the returned URL, waits in
 the same task, receives a strict continuation after the browser user requests
 another round, researches the successor itself, publishes it, and waits again.
 The normal remote flow has no copy/paste handoff or return-to-chat step. Its
-embedded session record includes committed comparison and verdict history;
-agent handles, browser capabilities, claim tokens, and publication fences are
-not public.
+embedded session record includes committed comparison and verdict history. The
+temporary page is public to anyone with its link; while the agent is waiting,
+a link holder can guide its next round. The page-bound browser credential is
+not identity or owner authority and never appears in a URL, MCP/chat output,
+telemetry, agent credential, or provider credential. Agent handles, claim
+tokens, and publication fences are not public.
 
 Connector setup alone does not make a host supported. See
 [the host-conformance harness](remote/docs/host-conformance-harness.md) and

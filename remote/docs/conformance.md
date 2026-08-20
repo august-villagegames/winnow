@@ -42,7 +42,7 @@ connector installation, or browser rendering alone.
 Run [host-conformance-harness.md](host-conformance-harness.md) against the
 deployed `/mcp` endpoint. Record only redacted outcome classes and timings:
 
-1. Connector configuration and offering/prerequisite disclosure.
+1. Connector configuration, offering/prerequisite disclosure, and the required pre-create notice that the temporary page and committed choices are public by link, link holders can guide a future round while the agent waits, and the page expires.
 2. A public page/resource URL visible before the first wait.
 3. Two independent browser-driven cycles in the same task: accepted request,
    resumed task without chat input, successor publication, and a following
@@ -63,10 +63,14 @@ message, recurring approval, hidden URL, or unsafe shared-egress quota policy.
 
 Winnow Remote adds no account, payment, advertising, sponsored alternative, or
 server-side research. The public HereNow page contains comparison content and
-committed verdict history, and expires on its original provider schedule.
-Claim tokens, agent session handles, browser capabilities, and publish fences
-are never placed in public URLs or page content. A public URL cannot recover
-private agent state.
+committed verdict history, and expires on its original provider schedule. It
+also carries a page-bound browser credential, so a link holder can submit the
+current completed round while the agent is actively waiting. That is not user
+identity or owner authority and cannot call MCP tools or obtain agent, provider,
+or publication-fence powers. The browser credential is never placed in a URL,
+MCP/chat output, telemetry, agent credential, or provider credential. Claim
+tokens, agent session handles, and publish fences are never public. The public
+URL itself cannot recover private agent state.
 
 The historical Work Package 0 local browser/MCP probe and anonymous HereNow
 observation remain useful transport/provider evidence, but they do not approve

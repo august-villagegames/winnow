@@ -32,6 +32,14 @@ text block. It contains the exact fenced publish arguments plus the validated
 continuation needed to author `nextSeed`; a host must not rely on
 `structuredContent` alone at any stage of the loop.
 
+Before calling `create_winnow_session`, the host must plainly tell the
+initiating user that the temporary page and committed choices are public to
+anyone with its link, that a link holder can guide a future round while the
+agent is waiting, and that the page expires. The explicit request to use
+Winnow authorizes creation after this notice; the host must not require a
+second approval. This is a host-conformance assertion, not server-enforced
+identity or ownership.
+
 Before handing it to a host tester, verify the following without user content:
 
 - `POST /mcp` reaches the official Streamable HTTP application directly (no redirect, auth wall, HTML interstitial, proxy buffering, or path rewrite);
@@ -76,7 +84,7 @@ request bodies, or host diagnostic details.
 For **each** of Claude, Cowork, and Claude Code, start a fresh task and record only the following redacted facts:
 
 1. Host product/version/configuration, whether ordinary host access is free, paid/pass-based, or ad-supported, and the exact user-facing prerequisite disclosure. Winnow itself adds no payment, advertising, or sponsored path.
-2. Endpoint configuration success and a non-sensitive page/resource URL shown in the task before its first wait.
+2. The pre-create public-link and expiry disclosure, followed by endpoint configuration success and a non-sensitive page/resource URL shown in the task before its first wait.
 3. Two independent browser-triggered cycles: representative idle interval; browser request accepted; same task resumes without chat input; second MCP tool call occurs; task re-enters a second wait. Record timings and outcome classes, not payloads or IDs.
 4. One-time/unattended approval behavior; cancellation; connection loss
    (including disconnected-connector recovery when the host exposes it); UI
