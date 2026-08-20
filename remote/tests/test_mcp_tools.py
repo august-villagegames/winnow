@@ -21,7 +21,7 @@ from mcp.server.mcpserver import MCPServer  # noqa: E402
 from winnow_remote.app import AppConfig, AppDependencies, create_app  # noqa: E402
 from winnow_remote.contracts import BrowserNextRoundRequest  # noqa: E402
 from winnow_remote.coordinator import Coordinator, CoordinatorConfig  # noqa: E402
-from winnow_remote.herenow import MAX_REMOTE_MCP_RESULT_BYTES  # noqa: E402
+from winnow_remote.herenow import MAX_REMOTE_CONTINUATION_HANDOFF_BYTES, MAX_REMOTE_MCP_RESULT_BYTES  # noqa: E402
 from winnow_remote.mcp_contract import (  # noqa: E402
     ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI,
     ROUND_ONE_EXAMPLE,
@@ -31,8 +31,14 @@ from winnow_remote.mcp_contract import (  # noqa: E402
     round_one_authoring_guide,
     seed_contract_payload,
 )
-from winnow_remote.mcp_tools import McpToolConfig, McpToolService, register_mcp_tools  # noqa: E402
-from winnow_remote.repository import FakeRepository  # noqa: E402
+from winnow_remote.mcp_tools import (  # noqa: E402
+    McpToolConfig,
+    McpToolService,
+    _SUCCESSOR_SEED_REQUIREMENTS,
+    publish_handoff_payload,
+    register_mcp_tools,
+)
+from winnow_remote.repository import ActiveSession, FakeRepository  # noqa: E402
 from winnow_remote.security import CapabilitySecurity  # noqa: E402
 from winnow_remote.settings import (  # noqa: E402
     PollingWaitNotifier,
@@ -192,6 +198,7 @@ class McpToolTests(unittest.TestCase):
             "non-sensitive public-by-link session created after an explicit user request",
             "exactly one same-session successor",
             "accepted page-bound event for the current revision",
+            "complete successor seed, not merely the new round",
             "The host researches; Winnow does not.",
             "not grant user identity, owner authority",
             "renew wait",
@@ -496,6 +503,109 @@ class McpToolTests(unittest.TestCase):
         )
         self.assertEqual((published["roundNumber"], published["publishedRevision"]), (2, 2))
         self.assertEqual(self.page_envelope(self.built[-1])["browserCapability"], browser)
+
+    def test_successor_handoff_requires_a_complete_seed_and_a_round_only_retry_is_recoverable(self):
+        receipt = self.create()
+        stored = self.repository.lookup_agent(self.security.capability_hash(receipt["sessionHandle"]))
+        self.assertIsNotNone(stored)
+        browser = self.security.browser_capability_for_session(stored.session_id)
+        self.assertEqual(
+            self.with_provenance(
+                self.service.wait(
+                    {
+                        "sessionHandle": receipt["sessionHandle"],
+                        "expectedRoundNumber": 1,
+                        "expectedSeedHash": receipt["seedHash"],
+                        "maxWaitSeconds": 1,
+                    }
+                )
+            )["status"],
+            "still_waiting",
+        )
+        accepted = self.coordinator.accept_browser_next_round(browser, origin="https://demo.here.now", request=self.browser_request(receipt))
+        self.assertEqual(accepted["status"], "accepted")
+        event = self.with_provenance(
+            self.service.wait(
+                {
+                    "sessionHandle": receipt["sessionHandle"],
+                    "expectedRoundNumber": 1,
+                    "expectedSeedHash": receipt["seedHash"],
+                    "maxWaitSeconds": 1,
+                }
+            )
+        )
+        handoff = publish_handoff_payload(event, receipt["sessionHandle"])
+        self.assertEqual(handoff["nextSeedRequirements"], _SUCCESSOR_SEED_REQUIREMENTS)
+        self.assertEqual(
+            handoff["nextSeedRequirements"]["rootFields"],
+            ["protocol", "schemaVersion", "runtimeVersion", "session", "profileExclusions", "profilePatterns", "history", "round"],
+        )
+        self.assertEqual(
+            handoff["nextSeedRequirements"]["rootValues"],
+            {"protocol": "winnow.portable-session", "schemaVersion": 4, "runtimeVersion": "4.0.0"},
+        )
+        self.assertEqual(
+            handoff["nextSeedRequirements"]["excludeFromNextSeed"],
+            ["parent", "parentProfilePatterns", "parentProfileExclusions", "completedRounds", "nextRoundNumber"],
+        )
+        self.assertEqual(handoff["nextSeedRequirements"]["round"]["requiredFields"], ["number", "generatedAt", "factors", "sources", "options"])
+        self.assertIn("primary factor", handoff["nextSeedRequirements"]["round"]["primaryFactor"])
+        self.assertIn("exactly the supplied publishArguments", handoff["nextSeedRequirements"]["publishArguments"])
+
+        successor = fixture("synthetic-successor-seed.json")
+        round_only = dict(successor["round"])
+        arguments = {
+            "sessionHandle": receipt["sessionHandle"],
+            "eventId": event["eventId"],
+            "publishFence": event["publishFence"],
+            "parentSeedHash": receipt["seedHash"],
+            "nextSeed": round_only,
+        }
+        rejected = self.with_provenance(self.service.publish(arguments))
+        self.assertEqual(rejected["status"], "rejected")
+        self.assertEqual(len(self.built), 2)
+        stored_after_rejection = self.repository.lookup_agent(self.security.capability_hash(receipt["sessionHandle"]))
+        self.assertIsInstance(stored_after_rejection, ActiveSession)
+        self.assertEqual(stored_after_rejection.phase, "research_requested")
+        self.assertEqual(stored_after_rejection.accepted_event["eventId"], event["eventId"])
+
+        published = self.with_provenance(self.service.publish({**arguments, "nextSeed": successor}))
+        self.assertEqual((published["status"], published["roundNumber"], published["publishedRevision"]), ("awaiting_agent_wait", 2, 2))
+        self.assertEqual(len(self.built), 3)
+
+    def test_publish_handoff_reserves_room_for_assistant_instructions(self):
+        continuation = {"parent": {"seedHash": "a" * 64}, "padding": ""}
+        base_size = len(
+            json.dumps(
+                continuation,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        continuation["padding"] = "x" * (MAX_REMOTE_CONTINUATION_HANDOFF_BYTES - base_size)
+        bounded_size = len(
+            json.dumps(
+                continuation,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        self.assertEqual(bounded_size, MAX_REMOTE_CONTINUATION_HANDOFF_BYTES)
+        handoff = publish_handoff_payload(
+            {
+                "eventId": "e" * 32,
+                "publishFence": "f" * 43,
+                "continuation": continuation,
+                "researchDeadline": "2026-08-18T12:01:00Z",
+            },
+            "s" * 43,
+        )
+        self.assertLessEqual(
+            len(json.dumps(handoff, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")),
+            MAX_REMOTE_MCP_RESULT_BYTES,
+        )
 
     def test_cancelling_one_wait_after_event_acceptance_never_loses_the_durable_event(self):
         receipt = self.create()

@@ -28,6 +28,47 @@ from .settings import RateLimitError, RateLimiter, WaitNotifier, current_mcp_pro
 ROLLING_VERSION = 1
 
 
+_SUCCESSOR_SEED_REQUIREMENTS = {
+    "nextSeed": "A complete Winnow successor seed, not only a new-round object.",
+    "rootFields": ["protocol", "schemaVersion", "runtimeVersion", "session", "profileExclusions", "profilePatterns", "history", "round"],
+    "rootValues": {"protocol": "winnow.portable-session", "schemaVersion": 4, "runtimeVersion": "4.0.0"},
+    "copyFromContinuation": {
+        "session": "Copy continuation.session exactly.",
+        "profileExclusions": "Copy continuation.profileExclusions exactly.",
+        "profilePatterns": "Copy continuation.profilePatterns exactly.",
+        "history": "Copy continuation.completedRounds exactly.",
+    },
+    "excludeFromNextSeed": ["parent", "parentProfilePatterns", "parentProfileExclusions", "completedRounds", "nextRoundNumber"],
+    "round": {
+        "requiredFields": ["number", "generatedAt", "factors", "sources", "options"],
+        "number": "Set to continuation.nextRoundNumber.",
+        "primaryFactor": "Keep the session primary factor and its definition unchanged from the completed current round.",
+        "research": "Research 4–10 new options; only non-primary factors may change.",
+    },
+    "publishArguments": "Use exactly the supplied publishArguments. Do not invent or request different eventId or publishFence values.",
+}
+
+
+def publish_handoff_payload(event: Mapping[str, Any], session_handle: str) -> dict[str, Any]:
+    """Build the fixed assistant-readable successor handoff without secrets beyond its agent context."""
+
+    continuation = event["continuation"]
+    parent = continuation["parent"]
+    arguments = {
+        "sessionHandle": session_handle,
+        "eventId": event["eventId"],
+        "publishFence": event["publishFence"],
+        "parentSeedHash": parent["seedHash"],
+    }
+    return {
+        "nextAction": "Research one valid complete successor seed, then call publish_next_round with the supplied publishArguments and nextSeed.",
+        "publishArguments": arguments,
+        "nextSeedRequirements": _SUCCESSOR_SEED_REQUIREMENTS,
+        "continuation": continuation,
+        "researchDeadline": event["researchDeadline"],
+    }
+
+
 def _load_portable_core() -> Any:
     # Keep this import private to the adapter; the coordinator owns all seed and
     # successor validation, while the compiler is only used to emit a page that
@@ -395,26 +436,9 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
     def publish_handoff(event: Mapping[str, Any], session_handle: str) -> TextContent:
         """Expose the one durable browser event in standard assistant content."""
 
-        continuation = event["continuation"]
-        parent = continuation["parent"]
-        arguments = {
-            "sessionHandle": session_handle,
-            "eventId": event["eventId"],
-            "publishFence": event["publishFence"],
-            "parentSeedHash": parent["seedHash"],
-        }
         return TextContent(
             type="text",
-            text=json.dumps(
-                {
-                    "nextAction": "Research a valid successor, then call publish_next_round with publishArguments and nextSeed.",
-                    "publishArguments": arguments,
-                    "continuation": continuation,
-                    "researchDeadline": event["researchDeadline"],
-                },
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
+            text=json.dumps(publish_handoff_payload(event, session_handle), separators=(",", ":"), sort_keys=True),
             annotations=Annotations(audience=["assistant"]),
         )
 
@@ -492,6 +516,8 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
         description=(
             "For a non-sensitive public-by-link session created after an explicit user request, validate and publish exactly one "
             "same-session successor after the accepted page-bound event for the current revision. "
+            "nextSeed must be a complete successor seed, not merely the new round: copy the supplied continuation's immutable "
+            "session, current profiles, and completed history, then construct its next round. "
             "The host researches; Winnow does not. The event does not grant user identity, owner authority, agent capability, "
             "provider access, or publication-fence authority. After success, immediately renew wait on the returned round and "
             "seed hash in this task. Stop on cancellation or terminal state, research deadline, original expiry, or the 100-option cap."

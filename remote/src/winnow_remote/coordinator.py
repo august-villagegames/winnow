@@ -31,7 +31,13 @@ from .contracts import (
     WaitForContinueRequest,
     canonical_json,
 )
-from .herenow import MAX_REMOTE_CREATE_SEED_BYTES, MAX_REMOTE_MCP_RESULT_BYTES, MAX_REMOTE_STORED_RECORD_BYTES, MAX_REMOTE_SUCCESSOR_SEED_BYTES
+from .herenow import (
+    MAX_REMOTE_CONTINUATION_HANDOFF_BYTES,
+    MAX_REMOTE_CREATE_SEED_BYTES,
+    MAX_REMOTE_MCP_RESULT_BYTES,
+    MAX_REMOTE_STORED_RECORD_BYTES,
+    MAX_REMOTE_SUCCESSOR_SEED_BYTES,
+)
 from .repository import ActiveSession, RecordConflict, StoredSession, TerminalTombstone, TransactionalRepository
 from .security import CapabilitySecurity, EncryptedSecret, SecretError
 
@@ -753,7 +759,10 @@ class Coordinator:
             if not record.site_url:
                 raise StateConflict("active publication URL is unavailable")
             continuation = reconstruct_continuation(record.seed, seed_hash=record.seed_hash, site_url=record.site_url, request=request, core=self._core)
-            self._assert_mcp_result_size({"status": "continue_requested", "continuation": continuation})
+            self._assert_mcp_result_size(
+                continuation,
+                limit=MAX_REMOTE_CONTINUATION_HANDOFF_BYTES,
+            )
             event_id = secrets.token_urlsafe(24)
             publish_fence = secrets.token_urlsafe(32)
             result = {"status": "accepted", "roundNumber": record.current_round_number, "publishedRevision": record.published_revision, "corsOrigin": record.allowed_origin}
@@ -1157,12 +1166,12 @@ class Coordinator:
             raise CoordinatorError("stored record exceeds the byte limit")
 
     @staticmethod
-    def _assert_mcp_result_size(value: Mapping[str, Any]) -> None:
+    def _assert_mcp_result_size(value: Mapping[str, Any], *, limit: int = MAX_REMOTE_MCP_RESULT_BYTES) -> None:
         try:
             encoded = canonical_json(dict(value))
         except ContractError as exc:
             raise CoordinatorError("MCP result cannot be serialized") from exc
-        if len(encoded) > MAX_REMOTE_MCP_RESULT_BYTES:
+        if len(encoded) > limit:
             raise CoordinatorError("MCP result exceeds the byte limit")
 
     def _create_receipt(self, record: ActiveSession, agent_capability: str) -> dict[str, Any]:

@@ -34,7 +34,7 @@ from winnow_remote.app import AppConfig, AppDependencies, create_app  # noqa: E4
 from winnow_remote.contracts import BrowserNextRoundRequest, PublishNextRoundRequest, WaitForContinueRequest  # noqa: E402
 from winnow_remote.coordinator import Coordinator, CoordinatorConfig, StateConflict, _load_portable_core  # noqa: E402
 from winnow_remote.herenow import HERE_NOW_CONTENT_TYPE, HereNowError, HereNowPublisher, MAX_REMOTE_BROWSER_REQUEST_BYTES  # noqa: E402
-from winnow_remote.mcp_tools import McpToolConfig, McpToolService  # noqa: E402
+from winnow_remote.mcp_tools import McpToolConfig, McpToolService, publish_handoff_payload  # noqa: E402
 from winnow_remote.repository import ActiveSession, RedisRepository  # noqa: E402
 from winnow_remote.security import CapabilitySecurity  # noqa: E402
 from winnow_remote.settings import InProcessWaitNotifier, RateLimiter, RequestProvenance, _CURRENT_MCP_PROVENANCE  # noqa: E402
@@ -566,18 +566,20 @@ class RemoteIntegrationTests(unittest.TestCase):
                 self.assertEqual(wait_result["content"][0]["annotations"], {"audience": ["assistant"]})
                 self.assertEqual(
                     json.loads(wait_result["content"][0]["text"]),
-                    {
-                        "nextAction": "Research a valid successor, then call publish_next_round with publishArguments and nextSeed.",
-                        "publishArguments": {
-                            "sessionHandle": receipt["sessionHandle"],
-                            "eventId": event["eventId"],
-                            "publishFence": event["publishFence"],
-                            "parentSeedHash": receipt["seedHash"],
-                        },
-                        "continuation": event["continuation"],
-                        "researchDeadline": event["researchDeadline"],
-                    },
+                    publish_handoff_payload(event, receipt["sessionHandle"]),
                 )
+                round_only = dict(self.successor["round"])
+                rejected_result = await AsgiHarness.mcp_result(
+                    environment.app,
+                    "publish_next_round",
+                    publish_arguments(receipt, event, round_only),
+                )
+                self.assertEqual(rejected_result["structuredContent"], {"status": "rejected"})
+                self.assertEqual(environment.fake_herenow.update_attempts, 0)
+                rejected_record = environment.repository.lookup_agent(environment.security.capability_hash(receipt["sessionHandle"]))
+                self.assertIsInstance(rejected_record, ActiveSession)
+                self.assertEqual(rejected_record.phase, "research_requested")
+                self.assertEqual(rejected_record.accepted_event["eventId"], event["eventId"])
                 publish_result = await AsgiHarness.mcp_result(environment.app, "publish_next_round", publish_arguments(receipt, event, self.successor))
                 published = dict(publish_result["structuredContent"])
                 self.assertEqual((published["status"], published["roundNumber"], published["publishedRevision"]), ("awaiting_agent_wait", 2, 2))
