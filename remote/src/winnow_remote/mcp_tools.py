@@ -15,6 +15,13 @@ from mcp.types import Annotations, CallToolResult, ResourceLink, TextContent, To
 from .contracts import CreateWinnowSessionRequest, ContractError, InvalidModeError, PublishNextRoundRequest, WaitForContinueRequest
 from .coordinator import AuthenticationError, CircuitOpen, Coordinator, CoordinatorError, CreationHandle, QuotaExceeded, StateConflict
 from .herenow import HereNowError, HereNowPublisher, PendingVersion, expected_live_markers
+from .mcp_contract import (
+    ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI,
+    SEED_SCHEMA_RESOURCE_URI,
+    canonical_seed_schema_text,
+    round_one_authoring_guide,
+    seed_contract_payload,
+)
 from .settings import RateLimitError, RateLimiter, WaitNotifier, current_mcp_provenance
 
 
@@ -325,7 +332,44 @@ class McpToolService:
 
 
 def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
-    """Register the only three model-free public tools on the official SDK."""
+    """Register fixed v4 discovery material and the public rolling tools."""
+
+    @server.resource(
+        SEED_SCHEMA_RESOURCE_URI,
+        name="Winnow v4 seed schema",
+        description="Exact canonical JSON Schema for a Winnow v4 round-one seed.",
+        mime_type="application/schema+json",
+    )
+    def read_seed_schema() -> str:
+        return canonical_seed_schema_text()
+
+    @server.resource(
+        ROUND_ONE_AUTHORING_GUIDE_RESOURCE_URI,
+        name="Winnow v4 round-one authoring guide",
+        description="Fixed safe guidance and a non-publishable structural v4 round-one example.",
+        mime_type="text/markdown",
+    )
+    def read_round_one_authoring_guide() -> str:
+        return round_one_authoring_guide()
+
+    @server.tool(
+        name="get_winnow_v4_seed_contract",
+        description=(
+            "Read the fixed Winnow v4 round-one schema and safe authoring guide. Use this before authoring a seed "
+            "when MCP resources are not available to the host. It does not create, research, publish, or inspect a session."
+        ),
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False),
+    )
+    async def get_winnow_v4_seed_contract(ctx: Context) -> CallToolResult:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(seed_contract_payload(), ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+                    annotations=Annotations(audience=["assistant"]),
+                )
+            ]
+        )
 
     def wait_handoff(receipt: Mapping[str, Any], session_handle: str) -> TextContent:
         """Give every host a standard text form of the next private tool call.
@@ -396,10 +440,13 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
     @server.tool(
         name="create_winnow_session",
         description=(
-            "Publish an anonymous public Winnow rolling comparison page from a valid round-one seed. Set mode to "
-            "the literal string 'rolling'. "
-            "Winnow does not research or call models. Show siteUrl to the user, then immediately call "
-            "wait_for_continue and keep this same task alive."
+            "After an explicit user request for a non-sensitive public-by-link comparison, publish a valid round-one seed. "
+            "The host researches; Winnow only validates, publishes, and coordinates. Before calling, tell the user that "
+            "link holders can read the temporary page and committed choices, guide a future round while this task waits, "
+            "and that it expires; then proceed without another approval. Set mode to literal 'rolling'. Read "
+            "get_winnow_v4_seed_contract or the winnow://contracts/v4/seed-schema.json and "
+            "winnow://contracts/v4/round-one-authoring-guide resources before authoring. Show siteUrl, then immediately "
+            "begin the renewable wait. Stop on cancellation or terminal state, deadline, expiry, or the 100-option cap."
         ),
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True),
         structured_output=True,
@@ -419,8 +466,12 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
     @server.tool(
         name="wait_for_continue",
         description=(
-            "Wait for one browser-authorized next-round request. On still_waiting, call this tool again immediately "
-            "without ending the task. On continue_requested, research the successor yourself, publish it, then wait again."
+            "For a non-sensitive public-by-link session created after an explicit user request, renewably wait for one page-bound "
+            "request for the current completed round. A link holder may guide one successor "
+            "while this task waits; that browser credential is not user identity or owner authority and grants no agent, provider, "
+            "or publication-fence power. On still_waiting, renew this wait without ending the task. On continue_requested, "
+            "research the successor yourself, publish it, then wait again. Stop on cancellation or terminal state, research "
+            "deadline, original expiry, or the 100-option cap."
         ),
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False),
         structured_output=True,
@@ -439,8 +490,11 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
     @server.tool(
         name="publish_next_round",
         description=(
-            "Validate and publish the same-session successor after a continue_requested event. Winnow does not research. "
-            "After a successful result, immediately wait on its returned round and seed hash in this same task."
+            "For a non-sensitive public-by-link session created after an explicit user request, validate and publish exactly one "
+            "same-session successor after the accepted page-bound event for the current revision. "
+            "The host researches; Winnow does not. The event does not grant user identity, owner authority, agent capability, "
+            "provider access, or publication-fence authority. After success, immediately renew wait on the returned round and "
+            "seed hash in this task. Stop on cancellation or terminal state, research deadline, original expiry, or the 100-option cap."
         ),
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True),
         structured_output=True,
@@ -462,7 +516,7 @@ def register_mcp_tools(server: MCPServer, service: McpToolService) -> None:
     # The official SDK's dynamic function model permits unknown kwargs by
     # default. The ASGI guard rejects them before decoding, and this schema
     # annotation keeps discovery clients aligned with that closed boundary.
-    for tool_name in ("create_winnow_session", "wait_for_continue", "publish_next_round"):
+    for tool_name in ("get_winnow_v4_seed_contract", "create_winnow_session", "wait_for_continue", "publish_next_round"):
         tool = server._tool_manager.get_tool(tool_name)  # SDK has no public per-tool schema override.
         if tool is not None:
             tool.parameters["additionalProperties"] = False

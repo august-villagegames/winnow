@@ -175,23 +175,32 @@ it is a separate rolling transport. Its page envelope, browser capability,
 session handle, claim token, publication fence, and browser API are transport
 state—not seed fields—and must never be inserted into a seed or continuation.
 
-The host agent calls `create_winnow_session` with a valid round-one seed and
-the literal `mode: "rolling"`. It shows the returned public URL, retains the
-private wait arguments from the tool result, and enters `wait_for_continue` in
-that same task. Winnow itself does not research or invoke a model. When a
-browser user requests another round, the same host agent receives the strict
-continuation, researches a successor, calls `publish_next_round`, and waits
-again. A rolling update verifies the same anonymous HereNow URL before the
-browser offers the user a Continue action; the user never has to return to the
-chat, copy a continuation, or move to another page for the normal flow.
+The host agent calls `create_winnow_session` only after an explicit user
+request for a non-sensitive comparison and after disclosing that the temporary
+page and committed choices are public to anyone with its link, can guide future
+rounds while the agent waits, and expire. It then shows the returned public URL,
+retains the private wait arguments from the tool result, and enters
+`wait_for_continue` in that same task without waiting for a second approval.
+Winnow itself does not research or invoke a model. When a page-bound request for
+the completed current round is accepted, the same host agent receives the
+strict continuation, researches one successor, calls `publish_next_round`, and
+waits again. A rolling update verifies the same anonymous HereNow URL before
+the browser offers the user a Continue action; the user never has to return to
+the chat, copy a continuation, or move to another page for the normal flow.
 
 The page's embedded seed, completed-round options, and committed verdict
-history are public to anyone with the anonymous URL. The user may deliberately
+history are public to anyone with the anonymous URL. The compiled public page
+also contains a page-bound browser credential: any link holder can use the
+current completed page to submit its one successor request while the agent has
+an active wait. That credential is not user identity or owner authority; it
+cannot call MCP wait/publish tools or gain agent, provider, claim-token, or
+publication-fence authority. It is never placed in a URL, MCP or chat output,
+telemetry, agent credential, or provider credential. The user may deliberately
 exclude a profile pattern from future research, but a completed verdict is
 immutable.
 Session expiry, option-capacity completion, circuit transition, or a failed
-publication is terminal. A public URL cannot recover an agent session handle,
-claim token, browser capability, or publish fence.
+publication is terminal. The public URL itself does not contain an agent
+session handle, claim token, or publish fence.
 
 Host support is a release-gated claim, not an implication of connector setup.
 Each host must pass the public two-cycle, no-return, approval, cancellation,

@@ -76,22 +76,30 @@ Never create, open, attach, or return a local HTML file or local file path.
 
 ## Remote rolling MCP sessions
 
-When the host has a configured Winnow Remote MCP connector, use its
+When the host has a configured Winnow MCP connector, use its
 `create_winnow_session` tool for a rolling session instead of the local
 publisher. Supply the same valid round-one seed, with `mode` set to the exact
 literal string `"rolling"`; `"publish"` and `"live"` are not valid modes.
-Winnow Remote coordinates publication and browser state only: the host agent
-does the research for every round. The public page's embedded session record,
-including committed verdict history, is readable by anyone with its URL; claim
-tokens and agent/browser capabilities never belong in normal chat text, a URL,
-or a seed.
+Winnow coordinates publication and browser state only: the host agent does the
+research for every round. Use rolling Winnow only after an explicit user
+request for a non-sensitive comparison. Before creating it, tell the user that
+the temporary page and committed choices are public to anyone with its link,
+that a link holder can guide a future round while the agent is waiting, and
+that the page expires; then proceed without a second approval. The page carries
+a page-bound browser credential for that current-round action. It is not user
+identity or owner authority and cannot act as the agent, provider, or
+publication fence; never expose it in normal chat text, a URL, telemetry, or a
+seed.
 Show the returned public URL, then call `wait_for_continue` in the same task.
 Use the `wait_for_continue` argument object supplied in the tool's text content
 for that call; do not quote it in normal chat text or put it in a URL.
 When the browser requests a continuation, use the text-content continuation
 and `publishArguments` to create a valid successor, call
 `publish_next_round`, and immediately wait again. Keep session handles,
-fences, and capabilities out of chat text and URLs.
+fences, and capabilities out of chat text and URLs. Each accepted current-round
+request releases one successor only. Renew waits while active; stop on host
+cancellation or a terminal result, including research deadline, original page
+expiry, or the 100-option cap.
 
 ## Later rounds
 

@@ -143,6 +143,19 @@ a { color: inherit; }
   color: var(--body);
 }
 
+.public-link-notice {
+  margin: 9px 0 0;
+  padding: 7px 9px;
+  color: var(--body);
+  background: var(--canvas);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: var(--type-xs);
+  line-height: 1.35;
+}
+
+.public-link-notice strong { color: var(--ink); }
+
 .deck-stage {
   position: relative;
   display: flex;

@@ -28,6 +28,7 @@ COPY --chown=winnow:winnow remote/src remote/src
 # runtime, and assets. No repository history, tests, or local probe code is
 # included in the runtime image.
 COPY --chown=winnow:winnow .agents/skills/winnow/assets .agents/skills/winnow/assets
+COPY --chown=winnow:winnow .agents/skills/winnow/references/seed.schema.json .agents/skills/winnow/references/seed.schema.json
 COPY --chown=winnow:winnow .agents/skills/winnow/scripts .agents/skills/winnow/scripts
 
 USER 10001:10001

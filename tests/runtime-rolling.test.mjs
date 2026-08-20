@@ -26,6 +26,7 @@ const context = {
   Array,
   Number,
   String,
+  Date,
   Error,
 };
 vm.runInNewContext(source, context, { filename: "rolling-runtime-ui.js" });
@@ -48,6 +49,16 @@ test("rolling envelope is closed and coordinator origin is normalized", () => {
 
 test("rolling runtime exposes the browser bootstrap entry point", () => {
   assert.equal(typeof rolling.bootstrap, "function");
+});
+
+test("rolling pages render a visible credential-free public-link expiry notice", () => {
+  const notice = rolling.publicLinkNotice("2026-08-19T12:00:00.000Z");
+  assert.match(notice, /class="public-link-notice"/);
+  assert.match(notice, /Anyone with this link can view this comparison/);
+  assert.match(notice, /link holder can guide future rounds/);
+  assert.match(notice, /This page expires/);
+  assert.match(notice, /datetime="2026-08-19T12:00:00\.000Z"/);
+  assert.doesNotMatch(notice, /browserCapability|Authorization|Bearer|sessionHandle|publishFence|claimToken/);
 });
 
 test("session-keyed rolling state resumes only an exact embedded revision", () => {

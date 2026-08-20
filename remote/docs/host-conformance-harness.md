@@ -32,6 +32,14 @@ text block. It contains the exact fenced publish arguments plus the validated
 continuation needed to author `nextSeed`; a host must not rely on
 `structuredContent` alone at any stage of the loop.
 
+Before calling `create_winnow_session`, the host must plainly tell the
+initiating user that the temporary page and committed choices are public to
+anyone with its link, that a link holder can guide a future round while the
+agent is waiting, and that the page expires. The explicit request to use
+Winnow authorizes creation after this notice; the host must not require a
+second approval. This is a host-conformance assertion, not server-enforced
+identity or ownership.
+
 Before handing it to a host tester, verify the following without user content:
 
 - `POST /mcp` reaches the official Streamable HTTP application directly (no redirect, auth wall, HTML interstitial, proxy buffering, or path rewrite);
@@ -42,14 +50,45 @@ Before handing it to a host tester, verify the following without user content:
 
 Do not use `remote/probes/mcp_browser_probe.py` as the deployed endpoint. It is a local Work Package 0 transport experiment, not the real Streamable HTTP service. Work Package 7 connects each host to the actual `/mcp` endpoint.
 
+## Connector readiness and recovery check
+
+Before each host run, verify the connector is visibly connected in that host's
+own UI. A previously configured connector can be disconnected even when the
+endpoint configuration remains present. This is distinct from a successful
+page publication and must be recorded as host-connection evidence.
+
+Where the host exposes a disconnected state, record one redacted recovery
+check before the two-cycle run:
+
+1. Confirm the host reports Winnow as disconnected; do not attempt to replace
+   it with a chat-only, Winnow-like comparison.
+2. Use the host UI to reconnect it, then begin a **fresh task** after the host
+   reports the connector ready. The service cannot change a host's connector
+   state while it is disconnected.
+3. Give the fresh task a normal-language intent, with no seed, schema, or
+   starter options, for example: “Use Winnow to research and compare
+   product-management prioritization frameworks. I want an interactive
+   comparison I can react to.”
+4. Record whether the host invokes Winnow, performs the needed research,
+   renders a live page, and proceeds into the normal wait loop. If it instead
+   simulates Winnow in chat or asks for implementation details, record that as
+   a host usability failure.
+
+This check does not require the server to add a keep-alive or a host-specific
+callback. Record only the visible connector state and redacted outcome class;
+never record handles, capabilities, prompts beyond the fixed example above,
+request bodies, or host diagnostic details.
+
 ## Per-host execution record
 
 For **each** of Claude, Cowork, and Claude Code, start a fresh task and record only the following redacted facts:
 
 1. Host product/version/configuration, whether ordinary host access is free, paid/pass-based, or ad-supported, and the exact user-facing prerequisite disclosure. Winnow itself adds no payment, advertising, or sponsored path.
-2. Endpoint configuration success and a non-sensitive page/resource URL shown in the task before its first wait.
+2. The pre-create public-link and expiry disclosure, followed by endpoint configuration success and a non-sensitive page/resource URL shown in the task before its first wait.
 3. Two independent browser-triggered cycles: representative idle interval; browser request accepted; same task resumes without chat input; second MCP tool call occurs; task re-enters a second wait. Record timings and outcome classes, not payloads or IDs.
-4. One-time/unattended approval behavior; cancellation; connection loss; UI navigation; and process termination behavior.
+4. One-time/unattended approval behavior; cancellation; connection loss
+   (including disconnected-connector recovery when the host exposes it); UI
+   navigation; and process termination behavior.
 5. Effective ingress provenance category observed by the service: direct transport source, recognized trusted-proxy source, or shared host egress. Record header names/trust-chain category only—never raw IPs, header values, user agents, or request bodies.
 6. Whether transport byte limits fit the actual deployed request/response budgets, and the resulting quota-admission decision for any shared egress.
 

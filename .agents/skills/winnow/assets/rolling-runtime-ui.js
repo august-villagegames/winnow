@@ -135,6 +135,13 @@
     };
   }
 
+  function publicLinkNotice(expiresAt) {
+    const value = typeof expiresAt === "string" ? expiresAt : "";
+    const date = new Date(value);
+    const expiry = Number.isNaN(date.valueOf()) ? "the scheduled expiry" : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    return `<aside class="public-link-notice" aria-label="Public-link notice"><strong>Shared page</strong> Anyone with this link can view this comparison. While Winnow is waiting, a link holder can guide future rounds. This page expires <time datetime="${escapeHtml(value)}">${escapeHtml(expiry)}</time>.</aside>`;
+  }
+
   function parseStatus(value) {
     const keys = new Set(["status", "roundNumber", "seedHash", "publishedRevision", "expiresAt", "agentLeaseExpiresAt", "remainingOptionCapacity"]);
     if (!object(value) || Object.keys(value).some((key) => !keys.has(key)) || !STATUS_VALUES.has(value.status)) throw new Error("invalid status response");
@@ -322,6 +329,7 @@
     }
 
     function renderRequirements() { return seed.session.requirements.length ? `<ul class="requirements" aria-label="Session requirements">${seed.session.requirements.map((item) => `<li class="pill">${escapeHtml(item)}</li>`).join("")}</ul>` : ""; }
+    function renderPublicLinkNotice() { return publicLinkNotice(document.querySelector('meta[name="winnow-expires-at"]')?.content || ""); }
     function optionImage(option, compact = false) {
       const images = Array.isArray(option.images) ? option.images : option.image ? [option.image] : [];
       if (!images.length) return "";
@@ -336,7 +344,7 @@
       if (!option) return renderSummary();
       const primary = seed.round.factors.find((factor) => factor.id === seed.session.primaryFactorId);
       const otherFactors = seed.round.factors.filter((factor) => factor.id !== seed.session.primaryFactorId);
-      app.innerHTML = `<section class="screen" aria-labelledby="session-title"><header class="session-header"><p class="caption">Round ${seed.round.number}</p><h1 class="session-title" id="session-title">${escapeHtml(seed.session.title)}</h1>${renderRequirements()}</header><div class="deck-stage"><div class="deck-ghost" aria-hidden="true"></div><article class="option-card" data-card-surface><div class="option-heading"><h2 class="option-title">${escapeHtml(option.title)}</h2><span class="primary-value">${escapeHtml(core.formatValue(primary, optionValue(option, primary.id)))}</span></div>${optionImage(option)}<p class="option-description">${escapeHtml(option.description.text)}</p><ul class="factor-values">${otherFactors.map((factor) => `<li class="pill"><span>${escapeHtml(factor.label)}</span> · ${escapeHtml(core.formatValue(factor, optionValue(option, factor.id)))}</li>`).join("")}</ul></article></div><nav class="verdict-controls" aria-label="React to option"><button class="verdict-button dislike" type="button" data-decision="dislike" aria-label="Don’t like">${icon("x")}</button><button class="verdict-button like" type="button" data-decision="like" aria-label="Like">${icon("heart")}</button></nav><p class="card-progress">${progress()}</p><button class="skip-button sr-only" type="button" data-decision="skip">Skip</button><p class="sr-only">Swipe left to dislike, right to like, or up to skip. Keyboard shortcuts: left arrow to dislike, right arrow to like, S or up arrow to skip.</p><div id="winnow-live" class="sr-only" aria-live="polite">${escapeHtml(persistenceWarning)}</div></section>`;
+      app.innerHTML = `<section class="screen" aria-labelledby="session-title"><header class="session-header"><p class="caption">Round ${seed.round.number}</p><h1 class="session-title" id="session-title">${escapeHtml(seed.session.title)}</h1>${renderRequirements()}${renderPublicLinkNotice()}</header><div class="deck-stage"><div class="deck-ghost" aria-hidden="true"></div><article class="option-card" data-card-surface><div class="option-heading"><h2 class="option-title">${escapeHtml(option.title)}</h2><span class="primary-value">${escapeHtml(core.formatValue(primary, optionValue(option, primary.id)))}</span></div>${optionImage(option)}<p class="option-description">${escapeHtml(option.description.text)}</p><ul class="factor-values">${otherFactors.map((factor) => `<li class="pill"><span>${escapeHtml(factor.label)}</span> · ${escapeHtml(core.formatValue(factor, optionValue(option, factor.id)))}</li>`).join("")}</ul></article></div><nav class="verdict-controls" aria-label="React to option"><button class="verdict-button dislike" type="button" data-decision="dislike" aria-label="Don’t like">${icon("x")}</button><button class="verdict-button like" type="button" data-decision="like" aria-label="Like">${icon("heart")}</button></nav><p class="card-progress">${progress()}</p><button class="skip-button sr-only" type="button" data-decision="skip">Skip</button><p class="sr-only">Swipe left to dislike, right to like, or up to skip. Keyboard shortcuts: left arrow to dislike, right arrow to like, S or up arrow to skip.</p><div id="winnow-live" class="sr-only" aria-live="polite">${escapeHtml(persistenceWarning)}</div></section>`;
       bindImages();
       bindCarousels();
     }
@@ -354,7 +362,7 @@
       const disliked = seed.round.options.filter((option) => decisions[option.id] === "dislike");
       const button = control();
       const cards = (options, dislike) => options.length ? options.map((option) => `<article class="mini-card${dislike ? " disliked" : ""}"><span class="mini-card-top">${optionImage(option, true) || escapeHtml(option.title)}</span><span class="mini-card-footer">${escapeHtml(option.title)}</span></article>`).join("") : '<p class="profile-empty">None this round.</p>';
-      app.innerHTML = `<section class="summary-screen" aria-labelledby="summary-title"><header class="session-header"><p class="caption">Round ${seed.round.number} complete</p><h1 class="session-title" id="summary-title">${escapeHtml(seed.session.title)}</h1></header><div class="summary-scroll"><section class="profile-panel" aria-labelledby="profile-title"><h2 class="section-caption" id="profile-title">Your profile so far</h2>${profileView(patterns)}</section><section class="summary-group" aria-labelledby="liked-title"><h2 class="section-caption" id="liked-title">Liked this round · ${liked.length}</h2><div class="mini-card-grid">${cards(liked, false)}</div></section><section class="summary-group" aria-labelledby="disliked-title"><h2 class="section-caption" id="disliked-title">Disliked this round · ${disliked.length}</h2><div class="mini-card-grid">${cards(disliked, true)}</div></section></div><div class="summary-dock"><button class="continuation-button" type="button" id="rolling-next-round" ${button.disabled ? "disabled" : ""} aria-describedby="rolling-status">${escapeHtml(button.label)}</button><p class="rolling-status" id="rolling-status" aria-live="polite">${escapeHtml(button.help)}</p></div><div id="winnow-live" class="sr-only" aria-live="polite">${escapeHtml(persistenceWarning)}</div></section>`;
+      app.innerHTML = `<section class="summary-screen" aria-labelledby="summary-title"><header class="session-header"><p class="caption">Round ${seed.round.number} complete</p><h1 class="session-title" id="summary-title">${escapeHtml(seed.session.title)}</h1>${renderPublicLinkNotice()}</header><div class="summary-scroll"><section class="profile-panel" aria-labelledby="profile-title"><h2 class="section-caption" id="profile-title">Your profile so far</h2>${profileView(patterns)}</section><section class="summary-group" aria-labelledby="liked-title"><h2 class="section-caption" id="liked-title">Liked this round · ${liked.length}</h2><div class="mini-card-grid">${cards(liked, false)}</div></section><section class="summary-group" aria-labelledby="disliked-title"><h2 class="section-caption" id="disliked-title">Disliked this round · ${disliked.length}</h2><div class="mini-card-grid">${cards(disliked, true)}</div></section></div><div class="summary-dock"><button class="continuation-button" type="button" id="rolling-next-round" ${button.disabled ? "disabled" : ""} aria-describedby="rolling-status">${escapeHtml(button.label)}</button><p class="rolling-status" id="rolling-status" aria-live="polite">${escapeHtml(button.help)}</p></div><div id="winnow-live" class="sr-only" aria-live="polite">${escapeHtml(persistenceWarning)}</div></section>`;
       bindImages();
     }
     function render() { if (allDecided()) renderSummary(); else renderCard(); }
@@ -494,5 +502,5 @@
     })();
   }
 
-  return { PROTOCOL, VERSION, STATE_PROTOCOL, STATE_VERSION, validateEnvelope, emptyState, reconcileState, browserRequest, parseStatus, parseNextRoundResult, cacheBuster, consumeCacheBuster, pollingDelay, reconcileRemoteStatus, applyNextRoundResult, nextRoundControl, bootstrap };
+  return { PROTOCOL, VERSION, STATE_PROTOCOL, STATE_VERSION, validateEnvelope, emptyState, reconcileState, browserRequest, publicLinkNotice, parseStatus, parseNextRoundResult, cacheBuster, consumeCacheBuster, pollingDelay, reconcileRemoteStatus, applyNextRoundResult, nextRoundControl, bootstrap };
 });

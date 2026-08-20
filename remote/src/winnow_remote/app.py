@@ -150,10 +150,15 @@ class McpIngressGuard:
         name = params.get("name")
         arguments = params.get("arguments")
         expected = {
+            "get_winnow_v4_seed_contract": set(),
             "create_winnow_session": {"seed", "mode"},
             "wait_for_continue": {"sessionHandle", "expectedRoundNumber", "expectedSeedHash", "maxWaitSeconds"},
             "publish_next_round": {"sessionHandle", "eventId", "publishFence", "parentSeedHash", "nextSeed"},
         }.get(name)
+        if name == "get_winnow_v4_seed_contract" and arguments is None:
+            # MCP permits an omitted arguments field for a no-input tool. It
+            # remains closed whenever the caller does provide an object.
+            return
         if expected is not None and (not isinstance(arguments, dict) or set(arguments) != expected):
             raise _RequestRejected(400)
 
@@ -196,9 +201,18 @@ def create_app(config: AppConfig, dependencies: AppDependencies) -> Starlette:
         ),
     )
     mcp = MCPServer(
-        name="Winnow Remote",
-        description="Model-free anonymous Winnow rolling-session coordinator.",
-        instructions="Winnow never researches or invokes a model. Keep the originating task alive through each wait/research/publish cycle.",
+        name="Winnow",
+        description="Model-free coordinator for anonymous, public-by-link Winnow comparisons.",
+        instructions=(
+            "Use Winnow only after the user explicitly requests a non-sensitive public-by-link comparison. "
+            "The host researches and selects options; Winnow validates, publishes, and coordinates browser reactions. "
+            "Before creation, tell the initiating user that anyone with the temporary link can read the comparison and "
+            "committed choices, can guide a future round while this task is waiting, and that the page expires; then proceed "
+            "without a second approval. A page-bound browser credential is not user identity or owner authority and cannot "
+            "access agent, provider, or publication-fence powers. Each accepted current revision releases one successor; renew "
+            "waits while active. Stop on host cancellation or a terminal result, including research deadline, original expiry, "
+            "or the 100-option cap."
+        ),
         version="1",
     )
     register_mcp_tools(mcp, service)

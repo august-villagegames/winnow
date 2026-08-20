@@ -2,6 +2,12 @@
 
 `winnow-remote` is the separately deployable HTTPS boundary for rolling Winnow sessions. It exposes one Streamable HTTP MCP endpoint at `/mcp` and two browser endpoints under `/v1/session/`. It does not research, select options, or require a HereNow account/API key: it validates a supplied seed, coordinates browser choices, and creates or updates anonymous HereNow pages.
 
+Rolling pages are temporary and public to anyone with their link. While the
+host agent is actively waiting, a link holder can guide the current completed
+round into one successor. The page-bound browser credential that permits this
+is not user identity or owner authority; it never appears in a URL, MCP/chat
+output, telemetry, agent credential, or provider credential.
+
 The service is not ready to advertise any MCP host. A public HTTPS deployment and the host-specific two-cycle gate in [docs/host-conformance-harness.md](docs/host-conformance-harness.md) remain required work.
 
 ## Local verification
@@ -32,4 +38,3 @@ Running a container requires the complete production configuration described in 
 | `GET /readyz` | Redis reachability | Constant `{"status":"ready"}` or `{"status":"unavailable"}`; no session/store data |
 
 `/readyz` is for the platform load balancer; it performs only Redis `PING` and does not list, count, or inspect sessions. The image runs as UID/GID `10001`, disables Uvicorn access logs, and starts Uvicorn with proxy-header processing disabled so the application—not the server—owns its explicit trusted-proxy policy.
-
