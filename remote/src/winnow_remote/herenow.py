@@ -28,6 +28,11 @@ MAX_REMOTE_SUCCESSOR_SEED_BYTES = 786_432
 MAX_REMOTE_BROWSER_REQUEST_BYTES = 32_768
 MAX_REMOTE_STORED_RECORD_BYTES = 2_097_152
 MAX_REMOTE_MCP_RESULT_BYTES = 32_768
+# A ``continue_requested`` result also carries fixed agent instructions and
+# fenced publication arguments around the continuation itself.  Reserve room
+# for that assistant-readable handoff instead of allowing a continuation to
+# consume the entire MCP result budget on its own.
+MAX_REMOTE_CONTINUATION_HANDOFF_BYTES = 30_000
 # The outer JSON-RPC envelope is bounded independently of either seed.  It
 # leaves modest room around the largest supported successor while preventing
 # the ASGI transport from accepting an arbitrarily large body before the MCP

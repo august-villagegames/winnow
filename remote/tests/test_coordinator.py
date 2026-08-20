@@ -33,7 +33,7 @@ from winnow_remote.coordinator import (  # noqa: E402
     reconstruct_continuation,
 )
 from winnow_remote.herenow import _load_portable_core  # noqa: E402
-from winnow_remote.repository import FakeRepository, TerminalTombstone  # noqa: E402
+from winnow_remote.repository import ActiveSession, FakeRepository, TerminalTombstone  # noqa: E402
 from winnow_remote.security import CapabilitySecurity, EncryptedSecret, SecretError  # noqa: E402
 
 
@@ -418,6 +418,9 @@ process.stdout.write(JSON.stringify(result));
         })
         with self.assertRaisesRegex(CoordinatorError, "MCP result exceeds"):
             self.coordinator.accept_browser_next_round(handle.browser_capability, origin="https://large.here.now", request=request)
+        stored = self.repository.lookup_agent(self.security.capability_hash(handle.agent_capability))
+        self.assertIsInstance(stored, ActiveSession)
+        self.assertEqual((stored.phase, stored.agent_state, stored.accepted_event), ("accepting_request", "waiting", None))
         status = self.coordinator.browser_status(handle.browser_capability, origin="https://large.here.now", embedded_revision=1)
         self.assertEqual(status["status"], "connected")
 
