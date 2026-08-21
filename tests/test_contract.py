@@ -96,7 +96,6 @@ class ContractTripwireTests(unittest.TestCase):
         self.assertIn("4–10", protocol)
         self.assertIn("$SKILL_DIR/scripts/winnow.py", skill)
         self.assertIn("$SKILL_DIR/scripts/winnow.py", protocol)
-        self.assertIn(".agents/skills/winnow/scripts/winnow.py", readme)
         self.assertIn('literal string `"rolling"`', skill)
         self.assertIn("Winnow coordinates publication and browser state only", skill)
         self.assertIn("page-bound browser credential", skill)
@@ -105,6 +104,7 @@ class ContractTripwireTests(unittest.TestCase):
         self.assertIn("Winnow itself does not research or invoke a model", protocol)
         self.assertIn("Host support is a release-gated claim", protocol)
         self.assertIn("Connector setup alone does not make a host supported", readme)
+        self.assertIn("https://winnow-mcp.onrender.com/mcp", readme)
         for text in (skill, protocol, readme):
             self.assertNotIn("python3 scripts/winnow.py", text)
 
