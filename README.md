@@ -1,143 +1,124 @@
-# Portable Winnow v4
+# Winnow
 
-Portable Winnow compiles a strict v4 comparison seed in memory and publishes
-one self-contained page to an anonymous hosted Site. A local HTML file is never
-a supported deliverable. Later rounds are researched from a copied continuation
-package and published to new anonymous URLs.
+**Turn an open-ended decision into a focused comparison you can react to.**
 
-The canonical standalone repository is
-<https://github.com/august-villagegames/winnow>. This content is also kept at
-`portable-poc/` inside the full `winnow-dev` repository for integration work.
-Commands below assume this directory is the current working directory.
+Winnow is a remote MCP connector that helps an AI agent research a small,
+meaningful set of real options, publish an interactive comparison, and learn
+from your reactions before the next round. Start with a normal question—rather
+than a spreadsheet, a list of options, or a special format.
 
-## Install and update lifecycle
+> “Use Winnow to help me choose a sofa under $2,000. I need something durable
+> for a small apartment.”
 
-Install Winnow with the Skills CLI from the canonical repository:
+The agent researches the options and sources, builds the comparison, and
+keeps the decision moving. You react to the page instead of having to explain
+every preference up front.
 
-```sh
-npx skills add august-villagegames/winnow --skill winnow
+## What Winnow is for
+
+Winnow is useful when there are several plausible answers and a little
+structured comparison will make your next choice clearer:
+
+- products, furniture, gear, software, or travel options;
+- methods, frameworks, vendors, or approaches; and
+- any research-backed decision where you want to react your way toward a
+  better short list.
+
+It is **not** for sensitive or private decisions. A Winnow page is temporary
+and public to anyone who has its link.
+
+## How it works
+
+1. **Ask naturally.** Tell your agent what you are deciding and any constraints
+   you already know.
+2. **Get a researched first round.** Winnow presents 4–10 representative
+   options with sources, comparison details, and images when they help the
+   decision.
+3. **React on the page.** Like, dislike, or skip options. You can share the
+   link with collaborators who should help guide the comparison.
+4. **Narrow the next round.** Your agent researches fresh options based on the
+   reactions and continues until the decision is clear.
+
+You do not need to write JSON, prepare starter options, or inspect a local HTML
+file. The hosted comparison is the result.
+
+## Connect Winnow
+
+The connector gives an MCP-capable AI host a stable Winnow page that can
+continue through multiple rounds.
+
+The public MCP endpoint is:
+
+```text
+https://winnow-mcp.onrender.com/mcp
 ```
 
-By default this installs a project skill. Add `-g` for a global installation:
+### Claude Desktop
 
-```sh
-npx skills add august-villagegames/winnow --skill winnow -g
-```
+1. Open **Customize → Connectors**.
+2. Choose **Add custom connector**.
+3. Name it **Winnow** and enter the endpoint above.
+4. In a new conversation, enable **Winnow** from the connector menu.
+5. Ask naturally, for example:
 
-Update an installed Winnow skill explicitly between tasks:
+   > Use Winnow to research and compare product-management prioritization
+   > frameworks. I want an interactive comparison I can react to.
 
-```sh
-npx skills update winnow
-npx skills update winnow -g
-```
+Claude’s own instructions for adding and using a remote custom connector are
+available in its [custom-connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+Adding the connector makes it available; enabling it in the conversation lets
+Claude use it for that task.
 
-The installed revision is identified by the canonical repository ref or commit
-and the source and content state recorded by the Skills CLI. An update applies
-to newly started tasks; finish an active task with the skill revision it
-already loaded rather than mixing revisions during a session. Package or
-documentation changes that preserve `schemaVersion` and `runtimeVersion` are
-compatible with existing hosted sessions and continuations. Changes to the
-seed or continuation contract require an explicit version change and a
-migration decision. Hosted pages retain their embedded runtime and are not
-retroactively updated.
+Connector setup alone does not make a host supported. Hosts should complete the
+[conformance harness](remote/docs/host-conformance-harness.md) before they are
+presented as a tested Winnow integration.
 
-The repository keeps both supported project skill paths: `.agents/skills/winnow/`
-is the canonical source for Codex and the cross-agent Skills CLI, while
-`.claude/skills/winnow/` is a symlink to the same directory for native Claude
-Code discovery.
+## Before you share a page
 
-## Quick start
+The live experience is deliberately collaborative, with a clear boundary:
 
-The normal initial-round workflow is one command:
+- the comparison and the choices committed to it are visible to anyone with
+  the link;
+- while the agent is actively waiting, a link holder can request the current
+  round’s one follow-up round;
+- the page expires on its original schedule; and
+- a link does not grant access to the agent, its provider account, or any
+  private credentials.
 
-```sh
-python3 .agents/skills/winnow/scripts/winnow.py publish seed.json
-```
+Only use Winnow for non-sensitive decisions that you are comfortable sharing
+with link holders. For a private decision, use a regular conversation instead.
 
-`publish` validates the seed, freshly verifies every unique image URL in the
-current round, compiles and uploads the page, and checks the hosted page for the
-exact session ID, seed hash, runtime version, and normalized expiration markers.
-Any image or hosted-marker failure blocks publication. Completed-round images
-are not network-refetched, and no browser-based visual QA is required.
+## What a good request looks like
 
-`validate` and `verify-images` are optional diagnostics. Each `verify-images`
-invocation performs a fresh check; it does not create reusable state for
-`publish`.
+Winnow works from a topic, not a prewritten list. Add whatever constraints will
+make the comparison more useful:
 
-```sh
-python3 .agents/skills/winnow/scripts/winnow.py validate fixtures/synthetic-seed.json
-python3 .agents/skills/winnow/scripts/winnow.py verify-images seed.json
-```
+| Instead of | Try |
+| --- | --- |
+| “Help me choose a camera.” | “Use Winnow to help me choose a travel camera under $1,200. Low-light photos and simple controls matter most.” |
+| “Compare project-management tools.” | “Use Winnow to compare project-management tools for a five-person design team. We need strong client visibility and a calm interface.” |
+| “Which prioritization framework?” | “Use Winnow to compare prioritization frameworks for a product team deciding on its next-quarter roadmap.” |
 
-The included synthetic fixture uses reserved `example.com` image URLs, so it is
-suitable for schema and runtime tests but not image verification or publication.
-Use researched, direct, source-backed image URLs for a real session; an image
-may be hosted on a different CDN from its cited source page.
+The agent—not Winnow’s service—does the research and chooses the initial
+options. Winnow’s role is to make that research easy to compare and react to.
 
-For a later round, publish the successor with its copied continuation package:
+## For contributors
 
-```sh
-python3 .agents/skills/winnow/scripts/winnow.py publish next-seed.json --continuation continuation.json
-```
+[`remote/`](remote/) contains the deployable MCP coordinator for live rolling
+comparisons. It validates and coordinates sessions; it does not conduct
+research or choose options.
 
-Continuation inspection and successor validation are also available as optional
-diagnostics:
+Useful technical references:
 
-```sh
-python3 .agents/skills/winnow/scripts/winnow.py inspect-continuation continuation.json
-python3 .agents/skills/winnow/scripts/winnow.py validate-successor continuation.json next-seed.json
-```
+- [Remote service guide](remote/README.md)
+- [Deployment and operations guide](remote/docs/deployment.md)
+- [Host-conformance harness](remote/docs/host-conformance-harness.md)
 
-The publish result includes the hosted URL and expiration, current-round image
-and unique-image counts, and non-negative timings for validation, image
-verification, site publication, and total work. Never create, open, attach, or
-return a local HTML file or path.
-
-## Authoring contract
-
-Read `.agents/skills/winnow/references/protocol.md` and
-`.agents/skills/winnow/references/seed.schema.json` before authoring a seed.
-Sessions require images by default. Prefer one strong, source-backed
-image per option; use the supported 1–5 `images` range only when additional
-images add materially distinct, decision-relevant evidence. Use
-`session.imagePolicy.mode: "notApplicable"` with a reason only for a clearly
-non-visual decision.
-
-The runtime owns layout, interactions, ordering, profile logic, and continuation
-construction. Profile patterns are runtime-generated and carried explicitly in
-the v4 seed/continuation state; do not add runtime network calls, agent-authored presentation,
-hidden candidates, ranking weights, raw source HTML, credentials, or
-continuation JSON to a seed. The hosted URL is the deliverable.
-
-## Remote rolling MCP
-
-Winnow Remote uses the same v4 seed but updates one anonymous HereNow page
-through a configured MCP connector. The agent shows the returned URL, waits in
-the same task, receives a strict continuation after the browser user requests
-another round, researches the successor itself, publishes it, and waits again.
-The normal remote flow has no copy/paste handoff or return-to-chat step. Its
-embedded session record includes committed comparison and verdict history. The
-temporary page is public to anyone with its link; while the agent is waiting,
-a link holder can guide its next round. The page-bound browser credential is
-not identity or owner authority and never appears in a URL, MCP/chat output,
-telemetry, agent credential, or provider credential. Agent handles, claim
-tokens, and publication fences are not public.
-
-Connector setup alone does not make a host supported. See
-[the host-conformance harness](remote/docs/host-conformance-harness.md) and
-[conformance record](remote/docs/conformance.md) for the release gate and
-current status.
-
-## Tests
-
-```sh
-python3 -m unittest discover -s tests -v
-node --test tests/runtime-core.test.mjs
-```
+The remote service guide includes deterministic test and production setup
+instructions.
 
 ## License
 
 Winnow-authored code and documentation are licensed under Apache-2.0. The
 bundled Space Grotesk font and Lucide icons retain their upstream licenses; see
-[NOTICE](NOTICE), `.agents/skills/winnow/assets/fonts/OFL.txt`, and
-`.agents/skills/winnow/assets/icons/LICENSE`.
+[NOTICE](NOTICE) for attribution.
